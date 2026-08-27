@@ -86,6 +86,10 @@ def list_songs():
 def serve_song(filename):
   return send_file(os.path.join(SONGS_DIR, filename))
 
+@app.route('/')
+def index():
+  return jsonify({'status': 'ok', 'app': 'Galaxify Backend', 'version': '1.0'})
+
 @app.route('/ping')
 def ping():
   return jsonify({'status': 'ok', 'version': '1.0'})
