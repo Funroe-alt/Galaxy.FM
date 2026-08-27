@@ -3,7 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Galaxify</title>
+  <title>Galaxy.FM</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌌</text></svg>">
   <script src="config.js"></script>
   <script src="db.js"></script>
   <script src="art.js"></script>
@@ -214,6 +215,31 @@
     /* Download progress */
     .dl-progress{height:3px;background:var(--border);border-radius:2px;margin-top:6px;overflow:hidden;}
     .dl-bar{height:100%;background:var(--accent);transition:width 0.3s;border-radius:2px;}
+    /* Lyrics fullscreen */
+    #lyrics-scroll::-webkit-scrollbar { display:none; }
+    .lyric-line-fs {
+      font-size: 28px;
+      font-weight: 700;
+      color: rgba(255,255,255,0.25);
+      margin: 10px 0;
+      cursor: pointer;
+      transition: all 0.4s cubic-bezier(0.4,0,0.2,1);
+      line-height: 1.3;
+      padding: 6px 0;
+    }
+    .lyric-line-fs:hover { color: rgba(255,255,255,0.5); }
+    .lyric-line-fs.active {
+      color: #ffffff;
+      font-size: 36px;
+      text-shadow: 0 0 40px rgba(255,255,255,0.3);
+    }
+    .lyric-line-fs.past { color: rgba(255,255,255,0.15); }
+    .lyric-line-fs.near { color: rgba(255,255,255,0.4); font-size:30px; }
+    #lyrics-btn.active { color: var(--accent); }
+
+    /* Shimmer */
+    .shimmer { background: linear-gradient(90deg,var(--card) 25%,var(--card-hover) 50%,var(--card) 75%); background-size: 200% 100%; animation: shimmer 1.5s infinite; border-radius: 10px; }
+    @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
   </style>
 </head>
 <body>
@@ -223,7 +249,7 @@
 <div id="sidebar">
   <div id="logo-area">
     <div id="logo-icon">🌌</div>
-    <div id="logo-text">Galaxify</div>
+    <div id="logo-text">Galaxy.FM</div>
   </div>
 
   <div class="nav-section">
@@ -272,6 +298,12 @@
         <div class="section-title" style="margin:0">Your songs</div>
       </div>
       <div class="card-grid" id="songs-grid"></div>
+      <div id="trending-section">
+        <div class="section-title">🔥 Trending now</div>
+        <div class="card-grid" id="trending-grid">
+          <div style="color:var(--muted);font-size:13px">Loading trending songs…</div>
+        </div>
+      </div>
       <div id="playlists-section" style="display:none">
         <div class="section-title">Playlists</div>
         <div class="card-grid" id="home-pl-grid"></div>
@@ -287,6 +319,11 @@
   <div id="page-search" style="display:none">
     <div id="search-bar-wrap">
       <input id="search-bar" type="text" placeholder="What do you want to listen to?" oninput="onSearch(this.value)">
+      <!-- Search type tabs -->
+      <div style="display:flex;gap:8px;margin-top:14px;">
+        <button class="tab-btn active" id="stab-songs" onclick="setSearchTab('songs')">Songs</button>
+        <button class="tab-btn" id="stab-albums" onclick="setSearchTab('albums')">Albums</button>
+      </div>
     </div>
     <div class="main-content" style="margin-top:16px">
       <div id="search-local-section" style="display:none">
@@ -296,6 +333,10 @@
       <div id="search-yt-section">
         <div class="search-section-title" id="search-yt-label">Search for any song</div>
         <div id="search-yt-results"></div>
+      </div>
+      <div id="search-album-section" style="display:none">
+        <div class="search-section-title" id="search-album-label">Album results</div>
+        <div class="card-grid" id="search-album-results"></div>
       </div>
     </div>
   </div>
@@ -310,6 +351,34 @@
         <p>mp3 · wav · ogg · flac · aac · m4a — saved permanently</p>
       </div>
       <input type="file" id="file-input" multiple accept="audio/*" style="display:none" onchange="loadFiles(this.files)">
+
+      <!-- Spotify Import -->
+      <div style="margin-top:16px;background:var(--card);border-radius:12px;padding:20px;border:1px solid var(--border);">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+          <div style="width:36px;height:36px;background:#1DB954;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;">🎵</div>
+          <div>
+            <div style="font-size:15px;font-weight:700;color:var(--text)">Import Spotify playlist</div>
+            <div style="font-size:12px;color:var(--muted)">Export from exportify.net then drop the CSV here</div>
+          </div>
+        </div>
+        <div id="spotify-drop" onclick="document.getElementById('csv-input').click()" ondragover="onSpotifyDragOver(event)" ondragleave="onSpotifyDragLeave()" ondrop="onSpotifyDrop(event)"
+          style="border:2px dashed #1DB954;border-radius:8px;padding:16px;text-align:center;cursor:pointer;transition:all 0.2s;">
+          <div style="font-size:13px;color:#1DB954;font-weight:600">Drop Spotify CSV here or click to browse</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:4px">Get the CSV from exportify.net</div>
+        </div>
+        <input type="file" id="csv-input" accept=".csv" style="display:none" onchange="importSpotifyCSV(this.files[0])">
+        <!-- Import progress -->
+        <div id="spotify-progress" style="display:none;margin-top:14px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+            <div id="spotify-status" style="font-size:13px;color:var(--text)">Importing…</div>
+            <div id="spotify-count" style="font-size:12px;color:var(--muted)"></div>
+          </div>
+          <div style="height:4px;background:var(--border);border-radius:2px;overflow:hidden;">
+            <div id="spotify-bar" style="height:100%;background:#1DB954;width:0%;transition:width 0.3s;border-radius:2px;"></div>
+          </div>
+          <div id="spotify-log" style="margin-top:10px;max-height:120px;overflow-y:auto;font-size:11px;color:var(--muted);line-height:1.8;"></div>
+        </div>
+      </div>
       <div id="library-list" style="margin-top:20px"></div>
     </div>
   </div>
@@ -371,7 +440,7 @@
 <div class="overlay" id="settings-overlay">
   <div class="panel">
     <button class="close-btn" onclick="closeOverlay('settings-overlay')">×</button>
-    <h2>Settings</h2><p>Manage Galaxify</p>
+    <h2>Settings</h2><p>Manage Galaxy.FM</p>
 
     <div class="setting-section">
       <h3>🖥 Server status</h3>
@@ -483,6 +552,120 @@
   <div class="ctx-item danger" onclick="ctxRemove()">🗑 Remove</div>
 </div>
 
+<!-- Album Search Info Panel -->
+<div id="album-info-panel" style="display:none;position:fixed;top:0;left:0;right:0;bottom:90px;z-index:161;align-items:center;justify-content:center;background:rgba(0,0,0,0.8);backdrop-filter:blur(8px);">
+  <div style="background:linear-gradient(135deg,#0f0c2e,#1a0533);border:1px solid var(--border);border-radius:16px;width:560px;max-width:95vw;max-height:88vh;overflow-y:auto;position:relative;box-shadow:0 20px 60px rgba(0,0,0,0.8);">
+    <div id="aip-bg" style="position:absolute;top:0;left:0;right:0;height:180px;background-size:cover;background-position:center;filter:blur(30px) brightness(0.3);border-radius:16px 16px 0 0;"></div>
+    <button onclick="closeAlbumInfo()" style="position:absolute;top:14px;right:16px;background:rgba(255,255,255,0.1);border:none;color:#fff;width:32px;height:32px;border-radius:50%;font-size:18px;cursor:pointer;z-index:10">×</button>
+    <div style="position:relative;padding:28px;z-index:1;">
+      <div style="display:flex;gap:20px;align-items:flex-end;margin-bottom:20px;">
+        <div id="aip-art" style="width:130px;height:130px;border-radius:10px;overflow:hidden;flex-shrink:0;box-shadow:0 8px 32px rgba(0,0,0,0.6);background:#282828;display:flex;align-items:center;justify-content:center;font-size:52px;">💿</div>
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:rgba(255,255,255,0.4);margin-bottom:4px;">Album</div>
+          <div id="aip-name" style="font-size:24px;font-weight:800;color:#fff;margin-bottom:4px;line-height:1.2;"></div>
+          <div id="aip-artist" style="font-size:15px;color:rgba(255,255,255,0.6);margin-bottom:4px;"></div>
+          <div id="aip-meta" style="font-size:12px;color:rgba(255,255,255,0.35);"></div>
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap;">
+        <button id="aip-add-all-btn" onclick="addWholeAlbum()" style="background:var(--accent);border:none;color:#fff;padding:10px 24px;border-radius:24px;font-size:14px;font-weight:700;cursor:pointer;">+ Add all to library</button>
+        <button onclick="addAlbumAsCollection()" style="background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);color:#fff;padding:10px 20px;border-radius:24px;font-size:14px;cursor:pointer;">💿 Save as album</button>
+      </div>
+      <!-- Progress -->
+      <div id="aip-progress" style="display:none;margin-bottom:16px;">
+        <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
+          <div id="aip-prog-label" style="font-size:13px;color:var(--text)">Adding songs…</div>
+          <div id="aip-prog-count" style="font-size:12px;color:var(--muted)"></div>
+        </div>
+        <div style="height:4px;background:var(--border);border-radius:2px;overflow:hidden;">
+          <div id="aip-prog-bar" style="height:100%;background:var(--accent);width:0%;transition:width 0.3s;border-radius:2px;"></div>
+        </div>
+      </div>
+      <!-- Tracklist -->
+      <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:rgba(255,255,255,0.4);margin-bottom:10px;">Tracklist</div>
+      <div id="aip-tracks"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Song Info Panel -->
+<div id="song-info-panel" style="display:none;position:fixed;top:0;left:0;right:0;bottom:90px;z-index:160;align-items:center;justify-content:center;background:rgba(0,0,0,0.75);backdrop-filter:blur(8px);">
+  <div style="background:linear-gradient(135deg,#0f0c2e,#1a0533);border:1px solid var(--border);border-radius:16px;width:500px;max-width:95vw;max-height:85vh;overflow-y:auto;position:relative;box-shadow:0 20px 60px rgba(0,0,0,0.8);">
+    <!-- Background art blur -->
+    <div id="sip-bg" style="position:absolute;top:0;left:0;right:0;height:200px;background-size:cover;background-position:center;filter:blur(30px) brightness(0.3);border-radius:16px 16px 0 0;"></div>
+    <button onclick="closeSongInfo()" style="position:absolute;top:14px;right:16px;background:rgba(255,255,255,0.1);border:none;color:#fff;width:32px;height:32px;border-radius:50%;font-size:18px;cursor:pointer;z-index:10">×</button>
+    <div style="position:relative;padding:28px;z-index:1;">
+      <!-- Art + basic info -->
+      <div style="display:flex;gap:20px;align-items:flex-end;margin-bottom:24px;">
+        <div id="sip-art" style="width:120px;height:120px;border-radius:10px;overflow:hidden;flex-shrink:0;box-shadow:0 8px 32px rgba(0,0,0,0.6);background:#282828;display:flex;align-items:center;justify-content:center;font-size:48px;"></div>
+        <div style="flex:1;min-width:0;">
+          <div id="sip-title" style="font-size:22px;font-weight:800;color:#fff;margin-bottom:4px;line-height:1.2;"></div>
+          <div id="sip-artist" style="font-size:15px;color:rgba(255,255,255,0.7);margin-bottom:8px;"></div>
+          <div id="sip-album" style="font-size:13px;color:rgba(255,255,255,0.45);"></div>
+        </div>
+      </div>
+
+      <!-- Action buttons -->
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:24px;">
+        <button id="sip-play-btn" onclick="sipPlay()" style="background:var(--accent);border:none;color:#fff;padding:10px 24px;border-radius:24px;font-size:14px;font-weight:700;cursor:pointer;transition:background 0.15s;">▶ Play</button>
+        <button id="sip-like-btn" onclick="sipLike()" style="background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);color:#fff;padding:10px 20px;border-radius:24px;font-size:14px;cursor:pointer;">♡ Like</button>
+        <button onclick="sipLyrics()" style="background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);color:#fff;padding:10px 20px;border-radius:24px;font-size:14px;cursor:pointer;">🎤 Lyrics</button>
+        <button id="sip-radio-btn" onclick="sipRadio()" style="background:rgba(184,69,245,0.2);border:1px solid rgba(184,69,245,0.4);color:var(--accent);padding:10px 20px;border-radius:24px;font-size:14px;cursor:pointer;">📻 Start radio</button>
+      </div>
+
+      <!-- Add to playlist -->
+      <div style="margin-bottom:16px;">
+        <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:rgba(255,255,255,0.4);margin-bottom:8px;">Add to playlist</div>
+        <div id="sip-playlists" style="display:flex;flex-wrap:wrap;gap:8px;"></div>
+      </div>
+
+      <!-- Add to album -->
+      <div style="margin-bottom:16px;">
+        <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:rgba(255,255,255,0.4);margin-bottom:8px;">Add to album</div>
+        <div id="sip-albums" style="display:flex;flex-wrap:wrap;gap:8px;"></div>
+      </div>
+
+      <!-- YT info (for trending) -->
+      <div id="sip-yt-section" style="display:none;border-top:1px solid rgba(255,255,255,0.08);padding-top:16px;">
+        <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:rgba(255,255,255,0.4);margin-bottom:10px;">YouTube</div>
+        <button id="sip-add-btn" onclick="sipAddYT()" style="background:var(--accent);border:none;color:#fff;padding:10px 24px;border-radius:24px;font-size:14px;font-weight:700;cursor:pointer;width:100%">+ Add to library</button>
+        <div id="sip-dl-progress" style="display:none;margin-top:8px;"><div style="height:3px;background:var(--border);border-radius:2px;overflow:hidden;"><div id="sip-dl-bar" style="height:100%;background:var(--accent);width:0%;transition:width 0.3s;border-radius:2px;"></div></div><div id="sip-dl-label" style="font-size:11px;color:var(--muted);margin-top:4px;text-align:center">Downloading…</div></div>
+      </div>
+
+      <!-- Similar songs -->
+      <div id="sip-similar-section" style="border-top:1px solid rgba(255,255,255,0.08);padding-top:16px;margin-top:8px;">
+        <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:rgba(255,255,255,0.4);margin-bottom:10px;">Similar songs</div>
+        <div id="sip-similar-list"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Lyrics Full Screen -->
+<div id="lyrics-fullscreen" style="display:none;position:fixed;top:0;left:0;right:0;bottom:90px;z-index:150;overflow:hidden;">
+  <!-- Blurred background -->
+  <div id="lyrics-bg" style="position:absolute;top:-20px;left:-20px;right:-20px;bottom:-20px;background-size:cover;background-position:center;filter:blur(40px) brightness(0.4);transform:scale(1.1);transition:background-image 1s ease;"></div>
+  <div style="position:absolute;inset:0;background:rgba(0,0,0,0.35)"></div>
+
+  <!-- Close button -->
+  <button onclick="toggleLyrics()" style="position:absolute;top:20px;right:24px;background:rgba(255,255,255,0.1);border:none;color:#fff;width:36px;height:36px;border-radius:50%;font-size:20px;cursor:pointer;z-index:10;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(10px)">×</button>
+
+  <!-- Song info top -->
+  <div style="position:absolute;top:20px;left:24px;display:flex;align-items:center;gap:14px;z-index:10">
+    <div id="lyrics-art" style="width:52px;height:52px;border-radius:8px;overflow:hidden;flex-shrink:0;box-shadow:0 4px 16px rgba(0,0,0,0.5)"></div>
+    <div>
+      <div id="lyrics-track-name" style="font-size:15px;font-weight:700;color:#fff"></div>
+      <div id="lyrics-track-artist" style="font-size:13px;color:rgba(255,255,255,0.7)"></div>
+    </div>
+  </div>
+
+  <!-- Lyrics scroll container -->
+  <div id="lyrics-scroll" style="position:absolute;inset:0;overflow-y:auto;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:100px 40px 60px;scrollbar-width:none;">
+    <div id="lyrics-lines-fs" style="width:100%;max-width:700px;text-align:center;"></div>
+    <div id="lyrics-status-fs" style="color:rgba(255,255,255,0.5);font-size:15px;margin-top:60px;text-align:center"></div>
+  </div>
+</div>
+
 <!-- Player -->
 <div id="player">
   <div id="track-info">
@@ -525,6 +708,9 @@
       <svg id="vol-icon" width="20" height="20" fill="currentColor" viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>
     </button>
     <input type="range" id="vol-slider" min="0" max="100" value="80" step="1" oninput="setVol(this.value)" style="width:80px">
+    <button class="ctrl-btn" id="lyrics-btn" onclick="toggleLyrics()" title="Lyrics" style="margin-left:4px">
+      <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24"><path d="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9 9-4.03 9-9-4.03-9-9-9zm-1 14v-4H7l5-8v4h4l-5 8z"/></svg>
+    </button>
   </div>
 </div>
 
@@ -623,8 +809,11 @@ function genId()    { return Date.now().toString(36)+Math.random().toString(36).
 // ── Greeting ──
 (function(){
   const h = new Date().getHours();
-  document.getElementById('greeting').textContent =
-    h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
+  const greeting = h >= 5 && h < 12 ? 'Good morning'
+    : h >= 12 && h < 17 ? 'Good afternoon'
+    : h >= 17 && h < 21 ? 'Good evening'
+    : 'Good night';
+  document.getElementById('greeting').textContent = greeting;
 })();
 
 // ── Audio events ──
@@ -817,39 +1006,45 @@ let searchQuery = '';
 function onSearch(val) {
   searchQuery = val;
   clearTimeout(searchTimeout);
+  const ytSec  = document.getElementById('search-yt-section');
+  const alSec  = document.getElementById('search-album-section');
+  const locSec = document.getElementById('search-local-section');
   if (!val.trim()) {
     document.getElementById('search-yt-results').innerHTML = '';
-    document.getElementById('search-yt-label').textContent = 'Search for any song';
-    document.getElementById('search-local-section').style.display = 'none';
+    document.getElementById('search-album-results').innerHTML = '';
+    locSec.style.display = 'none';
     return;
   }
-  // Local results instantly
-  const local = allSongs().filter(s =>
-    s.title?.toLowerCase().includes(val.toLowerCase()) ||
-    s.artist?.toLowerCase().includes(val.toLowerCase())
-  );
-  const localSec = document.getElementById('search-local-section');
-  const localRes = document.getElementById('search-local-results');
-  if (local.length) {
-    localSec.style.display = '';
-    localRes.innerHTML = '';
-    local.forEach(s => localRes.appendChild(buildCard(s, allSongs().indexOf(s))));
-  } else localSec.style.display = 'none';
-
-  document.getElementById('search-yt-label').textContent = 'YouTube results';
-  document.getElementById('search-yt-results').innerHTML = '<div style="color:var(--muted);font-size:13px;padding:8px 0">Searching…</div>';
-
-  searchTimeout = setTimeout(async () => {
-    if (val.trim().length < 2) return;
-    const results = await searchYouTube(val);
-    const container = document.getElementById('search-yt-results');
-    container.innerHTML = '';
-    if (!results.length) {
-      container.innerHTML = '<div style="color:var(--muted);font-size:13px">No results found</div>';
-      return;
-    }
-    results.forEach(r => container.appendChild(buildYTResult(r)));
-  }, 1000);
+  if (searchTab === 'songs') {
+    const local = allSongs().filter(s =>
+      s.title?.toLowerCase().includes(val.toLowerCase()) ||
+      s.artist?.toLowerCase().includes(val.toLowerCase())
+    );
+    if (local.length) {
+      locSec.style.display = '';
+      document.getElementById('search-local-results').innerHTML = '';
+      local.forEach(s => document.getElementById('search-local-results').appendChild(buildCard(s, allSongs().indexOf(s))));
+    } else locSec.style.display = 'none';
+    ytSec.style.display = ''; alSec.style.display = 'none';
+    document.getElementById('search-yt-label').textContent = 'YouTube results';
+    document.getElementById('search-yt-results').innerHTML = '<div style="color:var(--muted);font-size:13px;padding:8px 0">Searching…</div>';
+    searchTimeout = setTimeout(async () => {
+      if (val.trim().length < 2) return;
+      const results = await searchYouTube(val);
+      const container = document.getElementById('search-yt-results');
+      container.innerHTML = '';
+      if (!results.length) { container.innerHTML = '<div style="color:var(--muted);font-size:13px">No results found</div>'; return; }
+      results.forEach(r => {
+        const div = container.appendChild(buildYTResult(r));
+        div.style.cursor = 'pointer';
+        div.addEventListener('click', (e) => { if (e.target.tagName !== 'BUTTON') openYTSongInfo(r); });
+      });
+    }, 1000);
+  } else {
+    locSec.style.display = 'none'; ytSec.style.display = 'none'; alSec.style.display = '';
+    document.getElementById('search-album-results').innerHTML = '<div style="color:var(--muted);font-size:13px;padding:8px 0">Searching Last.fm…</div>';
+    searchTimeout = setTimeout(() => { if (val.trim().length >= 2) searchAlbums(val); }, 800);
+  }
 }
 
 function buildYTResult(r) {
@@ -861,21 +1056,26 @@ function buildYTResult(r) {
     <div class="yt-info">
       <div class="yt-title">${r.title}</div>
       <div class="yt-channel">${r.channel}</div>
-      ${isAdded ? '<div class="dl-progress"><div class="dl-bar" id="bar-${r.videoId}" style="width:100%"></div></div>' : ''}
     </div>
-    <button class="yt-add-btn ${isAdded?'added':''}" id="btn-${r.videoId}" onclick="addYTSong(event,'${r.videoId}','${r.title.replace(/'/g,"\\'")}','${r.channel.replace(/'/g,"\\'")}','${r.thumb}')">
+    <button class="yt-add-btn ${isAdded?'added':''}" id="btn-${r.videoId}">
       ${isAdded ? '✓ Added' : '+ Add'}
     </button>`;
+  const btn = div.querySelector('button');
+  if (!isAdded) {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      addYTSong(r.videoId, r.title, r.channel, r.thumb);
+    });
+  }
   return div;
 }
 
-async function addYTSong(e, videoId, title, artist, thumb) {
-  e.stopPropagation();
+async function addYTSong(videoId, title, artist, thumb) {
   const btn = document.getElementById('btn-'+videoId);
   if (!btn || btn.classList.contains('added')) return;
 
   if (!serverOnline) {
-    alert('The Galaxify server is not running.\n\nDouble-click start.bat to start it, then try again.');
+    alert('The Galaxy.FM server is not running.\n\nDouble-click start.bat to start it, then try again.');
     return;
   }
 
@@ -1196,8 +1396,8 @@ function buildCard(s, idx) {
     <button class="card-play" onclick="event.stopPropagation();playSong(${idx})">
       <svg width="20" height="20" fill="#000" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
     </button>`;
-  card.onclick=()=>playSong(idx);
-  card.oncontextmenu=(e)=>showCtx(e,idx);
+  card.onclick=()=>openSongInfo(idx);
+  card.oncontextmenu=(e)=>{e.preventDefault();showCtx(e,idx);};
   return card;
 }
 
@@ -1297,9 +1497,842 @@ function setPage(p) {
   if(p==='library') refreshLibrary();
 }
 
-// ── Init ──
+// ── Album Search (Last.fm) ──
+let currentAlbumData = null;
+
+async function searchAlbums(query) {
+  const grid = document.getElementById('search-album-results');
+  try {
+    const url = `https://ws.audioscrobbler.com/2.0/?method=album.search&api_key=${CONFIG.LASTFM_KEY}&album=${encodeURIComponent(query)}&format=json&limit=12`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    if (!res.ok) throw new Error('Last.fm error');
+    const data = await res.json();
+    const results = data?.results?.albummatches?.album || [];
+    grid.innerHTML = '';
+    if (!results.length) { grid.innerHTML = '<div style="color:var(--muted);font-size:13px">No albums found</div>'; return; }
+    results.forEach(al => {
+      const img = [...(al.image||[])].reverse().find(i => i['#text'] && !i['#text'].includes('2a96cbd8b46e442fc41c2b86b821562f'));
+      const art = img?.['#text'] || '';
+      const card = document.createElement('div');
+      card.className = 'card';
+      card.innerHTML = `
+        <div class="card-art" style="background:#1a1545">
+          ${art ? `<img src="${art}" style="width:100%;height:100%;object-fit:cover">` : '<span style="font-size:52px">💿</span>'}
+        </div>
+        <div class="card-title">${al.name}</div>
+        <div class="card-sub">${al.artist}</div>
+        <button class="card-play" onclick="event.stopPropagation()">
+          <svg width="20" height="20" fill="#000" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+        </button>`;
+      card.onclick = () => openAlbumInfo(al.name, al.artist, art);
+      grid.appendChild(card);
+    });
+  } catch(e) {
+    grid.innerHTML = '<div style="color:var(--muted);font-size:13px">Search failed — check your connection</div>';
+  }
+}
+
+async function openAlbumInfo(name, artist, art) {
+  currentAlbumData = { name, artist, art, tracks: [] };
+  const panel = document.getElementById('album-info-panel');
+  panel.style.display = 'flex';
+  // Set header
+  const bg = document.getElementById('aip-bg');
+  if (art) bg.style.backgroundImage = `url(${art})`;
+  const artEl = document.getElementById('aip-art');
+  artEl.innerHTML = art ? `<img src="${art}" style="width:100%;height:100%;object-fit:cover">` : '💿';
+  document.getElementById('aip-name').textContent   = name;
+  document.getElementById('aip-artist').textContent = artist;
+  document.getElementById('aip-meta').textContent   = 'Loading tracklist…';
+  document.getElementById('aip-tracks').innerHTML   = '<div style="color:var(--muted);font-size:13px">Loading…</div>';
+  document.getElementById('aip-progress').style.display = 'none';
+  document.getElementById('aip-add-all-btn').textContent = '+ Add all to library';
+  document.getElementById('aip-add-all-btn').disabled = false;
+
+  // Fetch tracklist from Last.fm
+  try {
+    const url = `https://ws.audioscrobbler.com/2.0/?method=album.getinfo&api_key=${CONFIG.LASTFM_KEY}&artist=${encodeURIComponent(artist)}&album=${encodeURIComponent(name)}&format=json`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    const data = await res.json();
+    const tracks = data?.album?.tracks?.track || [];
+    const trackList = Array.isArray(tracks) ? tracks : [tracks];
+    currentAlbumData.tracks = trackList.map((t,i) => ({
+      title: t.name, artist: t.artist?.name || artist, num: i+1
+    }));
+    document.getElementById('aip-meta').textContent = `${artist} · ${trackList.length} tracks`;
+    const trackDiv = document.getElementById('aip-tracks');
+    trackDiv.innerHTML = '';
+    currentAlbumData.tracks.forEach((t, i) => {
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:12px;padding:8px;border-radius:6px;cursor:pointer;transition:background 0.15s;';
+      row.onmouseover = () => row.style.background = 'rgba(255,255,255,0.06)';
+      row.onmouseout  = () => row.style.background  = 'transparent';
+      row.innerHTML = `
+        <div style="width:24px;text-align:center;font-size:13px;color:rgba(255,255,255,0.35);flex-shrink:0">${i+1}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:14px;font-weight:500;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${t.title}</div>
+          <div style="font-size:11px;color:rgba(255,255,255,0.4)">${t.artist}</div>
+        </div>
+        <button style="background:rgba(184,69,245,0.15);border:1px solid rgba(184,69,245,0.3);color:var(--accent);padding:4px 12px;border-radius:10px;font-size:11px;cursor:pointer;flex-shrink:0" 
+          onclick="event.stopPropagation();addSingleTrack(${i})">+ Add</button>`;
+      trackDiv.appendChild(row);
+    });
+  } catch(e) {
+    document.getElementById('aip-tracks').innerHTML = '<div style="color:var(--muted);font-size:13px">Could not load tracklist</div>';
+  }
+}
+
+function closeAlbumInfo() {
+  document.getElementById('album-info-panel').style.display = 'none';
+  currentAlbumData = null;
+}
+
+async function addSingleTrack(idx) {
+  if (!currentAlbumData?.tracks[idx]) return;
+  if (!serverOnline) { alert('Server not running — run start.bat first'); return; }
+  const t = currentAlbumData.tracks[idx];
+  const results = await searchYouTube(`${t.title} ${t.artist}`);
+  if (!results.length) { alert('Could not find this track on YouTube'); return; }
+  const r = results[0];
+  addYTSong(r.videoId, t.title, t.artist, r.thumb);
+}
+
+async function addWholeAlbum() {
+  if (!currentAlbumData?.tracks.length) return;
+  if (!serverOnline) { alert('Server not running — run start.bat first'); return; }
+  document.getElementById('aip-add-all-btn').disabled = true;
+  document.getElementById('aip-add-all-btn').textContent = 'Adding…';
+  document.getElementById('aip-progress').style.display = '';
+  const bar   = document.getElementById('aip-prog-bar');
+  const label = document.getElementById('aip-prog-label');
+  const count = document.getElementById('aip-prog-count');
+  const tracks = currentAlbumData.tracks;
+  let added = 0;
+  for (let i = 0; i < tracks.length; i++) {
+    const t = tracks[i];
+    label.textContent = `Adding: ${t.title}`;
+    count.textContent = `${i+1}/${tracks.length}`;
+    bar.style.width   = ((i+1)/tracks.length*100)+'%';
+    try {
+      const results = await searchYouTube(`${t.title} ${t.artist} audio`);
+      if (results.length) {
+        const r = results[0];
+        if (!addedVideos.has(r.videoId)) {
+          await addYTSong(r.videoId, t.title, t.artist, r.thumb);
+          added++;
+        }
+      }
+    } catch(e) {}
+    await new Promise(r => setTimeout(r, 1500));
+  }
+  label.textContent = `Done! ${added} tracks added`;
+  bar.style.background = '#1DB954';
+  document.getElementById('aip-add-all-btn').textContent = '✓ Added';
+  refreshAll();
+}
+
+async function addAlbumAsCollection() {
+  if (!currentAlbumData) return;
+  // Create album entry
+  const al = { id:genId(), name:currentAlbumData.name, artist:currentAlbumData.artist, emoji:'💿', color:COLORS[albums.length%COLORS.length], art:currentAlbumData.art||null, songs:[], createdAt:Date.now() };
+  albums.push(al);
+  saveAls();
+  // Add all tracks
+  await addWholeAlbum();
+  // Link newly added songs to album
+  const startIdx = allSongs().length - currentAlbumData.tracks.length;
+  for (let i = Math.max(0,startIdx); i < allSongs().length; i++) {
+    if (!al.songs.includes(i)) al.songs.push(i);
+  }
+  saveAls(); refreshAll(); refreshSidebar();
+  closeAlbumInfo();
+  showAlbum(al.id);
+}
+let searchTab = 'songs';
+function setSearchTab(tab) {
+  searchTab = tab;
+  document.getElementById('stab-songs').classList.toggle('active', tab==='songs');
+  document.getElementById('stab-albums').classList.toggle('active', tab==='albums');
+  document.getElementById('search-yt-section').style.display   = tab==='songs' ? '' : 'none';
+  document.getElementById('search-album-section').style.display = tab==='albums' ? '' : 'none';
+  const val = document.getElementById('search-bar').value;
+  if (val.trim().length >= 2) onSearch(val);
+}
+function onSpotifyDragOver(e) { e.preventDefault(); document.getElementById('spotify-drop').style.background='rgba(29,185,84,0.1)'; }
+function onSpotifyDragLeave() { document.getElementById('spotify-drop').style.background=''; }
+function onSpotifyDrop(e) { e.preventDefault(); onSpotifyDragLeave(); if(e.dataTransfer.files[0]) importSpotifyCSV(e.dataTransfer.files[0]); }
+
+async function searchYouTubeWithRetry(query, retries=3) {
+  for (let i = 0; i < retries; i++) {
+    try { const r = await searchYouTube(query); if (r.length) return r; } catch(e) {}
+    if (i < retries-1) await new Promise(r => setTimeout(r, 2000*(i+1)));
+  }
+  return [];
+}
+
+async function importSpotifyCSV(file) {
+  if (!file) return;
+  const text  = await file.text();
+  const lines = text.split('\n').filter(l => l.trim());
+  if (lines.length < 2) { alert('CSV appears empty'); return; }
+  const header = parseCSVLine(lines[0]);
+  const col = (name) => header.findIndex(h => h.replace(/"/g,'').toLowerCase().includes(name.toLowerCase()));
+  const titleCol  = col('Track Name') >= 0 ? col('Track Name') : col('title') >= 0 ? col('title') : 0;
+  const artistCol = col('Artist Name(s)') >= 0 ? col('Artist Name(s)') : col('Artist Name') >= 0 ? col('Artist Name') : col('artist') >= 0 ? col('artist') : 1;
+  const albumCol  = col('Album Name') >= 0 ? col('Album Name') : -1;
+  const songs = lines.slice(1).map(l => {
+    const cols = parseCSVLine(l);
+    const artist = cols[artistCol]?.replace(/"/g,'').split(',')[0].trim();
+    return { title: cols[titleCol]?.replace(/"/g,'').trim(), artist: artist||'', album: albumCol>=0?cols[albumCol]?.replace(/"/g,'').trim():'' };
+  }).filter(s => s.title && s.artist);
+  if (!songs.length) { alert("No songs found. Make sure this is from exportify.net"); return; }
+  const plName = file.name.replace('.csv','').replace(/_/g,' ').replace(/"/g,'');
+  const pl = { id:genId(), name:plName, emoji:'🎵', color:'#1DB954', songs:[], createdAt:Date.now() };
+  playlists.push(pl); savePls();
+  const prog=document.getElementById('spotify-progress');
+  const bar=document.getElementById('spotify-bar');
+  const stat=document.getElementById('spotify-status');
+  const count=document.getElementById('spotify-count');
+  const log=document.getElementById('spotify-log');
+  prog.style.display=''; log.innerHTML=''; bar.style.background='var(--accent)';
+  let added=0, skipped=0, failed=0;
+  for (let i=0; i<songs.length; i++) {
+    const s=songs[i];
+    stat.textContent = 'Searching: '+s.title;
+    count.textContent = (i+1)+'/'+songs.length+' ✓'+added+' ✕'+failed;
+    bar.style.width=((i+1)/songs.length*100)+'%';
+    try {
+      let results = await searchYouTubeWithRetry(s.title+' '+s.artist+' official audio');
+      if (!results.length) results = await searchYouTubeWithRetry(s.title+' '+s.artist);
+      if (!results.length) results = await searchYouTubeWithRetry(s.title);
+      if (!results.length) throw new Error('Not found on YouTube');
+      const r=results[0];
+      if (addedVideos.has(r.videoId)) {
+        const existIdx=localSongs.findIndex(ls=>ls.videoId===r.videoId);
+        if (existIdx>=0&&!pl.songs.includes(existIdx)){pl.songs.push(existIdx);savePls();}
+        skipped++;
+        log.innerHTML+='<div style="color:var(--muted)">⟳ '+s.title+' (already in library)</div>';
+      } else if (serverOnline) {
+        const res=await fetch(CONFIG.SERVER_URL+'/download',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({videoId:r.videoId,title:s.title,artist:s.artist})});
+        const data=await res.json();
+        await new Promise((resolve)=>{
+          if(data.status==='done'){resolve(data.file);return;}
+          const iv=setInterval(async()=>{
+            try{
+              const pr=await fetch(CONFIG.SERVER_URL+'/progress/'+r.videoId).then(x=>x.json());
+              if(pr.status==='done'){clearInterval(iv);resolve(pr.file);}
+              if(pr.status==='error'){clearInterval(iv);resolve(null);}
+            }catch(e){clearInterval(iv);resolve(null);}
+          },2000);
+          setTimeout(()=>{clearInterval(iv);resolve(null);},180000);
+        }).then(async filename=>{
+          if(filename){
+            await finishYTAdd(r.videoId,s.title,s.artist,r.thumb,filename);
+            const idx=allSongs().length-1;
+            if(!pl.songs.includes(idx)){pl.songs.push(idx);savePls();}
+            added++;
+            log.innerHTML+='<div style="color:#1DB954">✓ '+s.title+'</div>';
+          } else {
+            failed++;
+            log.innerHTML+='<div style="color:#ff6b6b">✕ '+s.title+' — download failed</div>';
+          }
+        });
+      } else {
+        const color=COLORS[localSongs.length%COLORS.length];
+        localSongs.push({id:genId(),title:s.title,artist:s.artist,url:'https://www.youtube.com/watch?v='+r.videoId,thumb:r.thumb,emoji:'🎵',color,yt:true,videoId:r.videoId});
+        addedVideos.add(r.videoId);
+        localStorage.setItem('gx-added-vids',JSON.stringify([...addedVideos]));
+        const idx=allSongs().length-1;
+        if(!pl.songs.includes(idx)){pl.songs.push(idx);savePls();}
+        added++;
+        log.innerHTML+='<div style="color:#1DB954">✓ '+s.title+' (link only)</div>';
+      }
+    } catch(e) {
+      failed++;
+      log.innerHTML+='<div style="color:#ff6b6b">✕ '+s.title+' — '+e.message+'</div>';
+    }
+    log.scrollTop=log.scrollHeight;
+    await new Promise(r=>setTimeout(r,1500));
+  }
+  stat.textContent='Done! '+added+' added, '+skipped+' already in library, '+failed+' failed';
+  bar.style.width='100%'; bar.style.background='#1DB954'; count.textContent='';
+  refreshAll(); showPlaylist(pl.id);
+}
+
+function parseCSVLine(line) {
+  const result=[]; let current='', inQuotes=false;
+  for(let i=0;i<line.length;i++){
+    const ch=line[i];
+    if(ch==='"'){inQuotes=!inQuotes;}
+    else if(ch===','&&!inQuotes){result.push(current);current='';}
+    else{current+=ch;}
+  }
+  result.push(current); return result;
+}
+
+  result.push(current);
+  return result;
+}
+let sipSongIdx = -1;
+let sipYTData  = null;
+let radioMode  = false;
+
+function openSongInfo(idx) {
+  sipSongIdx = idx;
+  sipYTData  = null;
+  const s = allSongs()[idx];
+  if (!s) return;
+  _buildSipContent(s, idx, false);
+  document.getElementById('song-info-panel').style.display = 'flex';
+  loadSimilar(s);
+}
+
+function openYTSongInfo(ytData) {
+  sipSongIdx = -1;
+  sipYTData  = ytData;
+  _buildSipContent({
+    title: ytData.title, artist: ytData.channel,
+    art: ytData.thumb, emoji: '▶️', color: '#1a0533'
+  }, -1, true);
+  document.getElementById('song-info-panel').style.display = 'flex';
+  loadSimilar({ title: ytData.title, artist: ytData.channel });
+}
+
+function _buildSipContent(s, idx, isYT) {
+  const src = s.art || s.thumb;
+  // BG
+  const bg = document.getElementById('sip-bg');
+  if (src) bg.style.backgroundImage = `url(${src})`;
+  else { bg.style.backgroundImage='none'; bg.style.background=s.color||'#1a0533'; }
+  // Art
+  const art = document.getElementById('sip-art');
+  art.innerHTML = src ? `<img src="${src}" style="width:100%;height:100%;object-fit:cover">` : (s.emoji||'🎵');
+  // Text
+  document.getElementById('sip-title').textContent  = s.title  || 'Unknown';
+  document.getElementById('sip-artist').textContent = s.artist || '—';
+  document.getElementById('sip-album').textContent  = s.album  || '';
+  // Like button
+  const likeBtn = document.getElementById('sip-like-btn');
+  likeBtn.textContent = likedSongs.has(idx) ? '♥ Liked' : '♡ Like';
+  likeBtn.style.color = likedSongs.has(idx) ? 'var(--accent)' : '#fff';
+  // Playlists
+  const plDiv = document.getElementById('sip-playlists');
+  plDiv.innerHTML = '';
+  if (!playlists.length) plDiv.innerHTML = '<span style="font-size:12px;color:var(--muted)">No playlists yet</span>';
+  playlists.forEach(pl => {
+    const has = idx >= 0 && pl.songs.includes(idx);
+    const btn = document.createElement('button');
+    btn.style.cssText = `background:${has?'rgba(184,69,245,0.3)':'rgba(255,255,255,0.08)'};border:1px solid ${has?'var(--accent)':'rgba(255,255,255,0.15)'};color:#fff;padding:6px 14px;border-radius:16px;font-size:12px;cursor:pointer;`;
+    btn.textContent = (has?'✓ ':'')+pl.emoji+' '+pl.name;
+    btn.onclick = () => {
+      if (idx < 0) return;
+      has ? pl.songs.splice(pl.songs.indexOf(idx),1) : pl.songs.push(idx);
+      savePls(); _buildSipContent(s, idx, isYT);
+    };
+    plDiv.appendChild(btn);
+  });
+  // Albums
+  const alDiv = document.getElementById('sip-albums');
+  alDiv.innerHTML = '';
+  if (!albums.length) alDiv.innerHTML = '<span style="font-size:12px;color:var(--muted)">No albums yet</span>';
+  albums.forEach(al => {
+    const has = idx >= 0 && al.songs.includes(idx);
+    const btn = document.createElement('button');
+    btn.style.cssText = `background:${has?'rgba(184,69,245,0.3)':'rgba(255,255,255,0.08)'};border:1px solid ${has?'var(--accent)':'rgba(255,255,255,0.15)'};color:#fff;padding:6px 14px;border-radius:16px;font-size:12px;cursor:pointer;`;
+    btn.textContent = (has?'✓ ':'')+al.emoji+' '+al.name;
+    btn.onclick = () => {
+      if (idx < 0) return;
+      has ? al.songs.splice(al.songs.indexOf(idx),1) : al.songs.push(idx);
+      saveAls(); _buildSipContent(s, idx, isYT);
+    };
+    alDiv.appendChild(btn);
+  });
+  // YT section
+  const ytSec = document.getElementById('sip-yt-section');
+  ytSec.style.display = isYT ? '' : 'none';
+  if (isYT) {
+    document.getElementById('sip-add-btn').textContent = addedVideos.has(sipYTData?.videoId) ? '✓ Already added' : '+ Add to library';
+    document.getElementById('sip-dl-progress').style.display = 'none';
+  }
+  // Play/radio buttons
+  document.getElementById('sip-play-btn').style.display = isYT ? 'none' : '';
+  document.getElementById('sip-radio-btn').textContent = radioMode ? '📻 Stop radio' : '📻 Start radio';
+}
+
+function closeSongInfo() {
+  document.getElementById('song-info-panel').style.display = 'none';
+  sipSongIdx = -1; sipYTData = null;
+}
+
+function sipPlay() { if (sipSongIdx >= 0) { playSong(sipSongIdx); closeSongInfo(); } }
+
+function sipLike() {
+  if (sipSongIdx < 0) return;
+  likedSongs.has(sipSongIdx) ? likedSongs.delete(sipSongIdx) : likedSongs.add(sipSongIdx);
+  localStorage.setItem('gx-liked', JSON.stringify([...likedSongs]));
+  const s = allSongs()[sipSongIdx];
+  _buildSipContent(s, sipSongIdx, false);
+}
+
+function sipLyrics() {
+  if (sipSongIdx >= 0) playSong(sipSongIdx);
+  closeSongInfo();
+  if (!lyricsOpen) toggleLyrics();
+}
+
+async function sipAddYT() {
+  if (!sipYTData) return;
+  const { videoId, title, channel, thumb } = sipYTData;
+  if (addedVideos.has(videoId)) return;
+  if (!serverOnline) { alert('Galaxy.FM server is not running.\n\nRun start.bat first.'); return; }
+  document.getElementById('sip-add-btn').style.display = 'none';
+  document.getElementById('sip-dl-progress').style.display = '';
+  const bar   = document.getElementById('sip-dl-bar');
+  const label = document.getElementById('sip-dl-label');
+  try {
+    const res  = await fetch(`${CONFIG.SERVER_URL}/download`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({videoId,title,artist:channel}) });
+    const data = await res.json();
+    if (data.status === 'done') { await finishYTAdd(videoId,title,channel,thumb,data.file); closeSongInfo(); return; }
+    const iv = setInterval(async () => {
+      const pr = await fetch(`${CONFIG.SERVER_URL}/progress/${videoId}`).then(r=>r.json());
+      bar.style.width   = (pr.progress||0)+'%';
+      label.textContent = `Downloading… ${pr.progress||0}%`;
+      if (pr.status==='done')  { clearInterval(iv); await finishYTAdd(videoId,title,channel,thumb,pr.file); closeSongInfo(); }
+      if (pr.status==='error') { clearInterval(iv); label.textContent='Download failed'; }
+    }, 1000);
+  } catch(e) { label.textContent = 'Download failed'; }
+}
+
+async function sipRadio() {
+  radioMode = !radioMode;
+  if (sipSongIdx >= 0) {
+    const s = allSongs()[sipSongIdx];
+    _buildSipContent(s, sipSongIdx, false);
+  }
+  if (radioMode && currentIdx >= 0) {
+    const s = allSongs()[currentIdx];
+    document.getElementById('sip-radio-btn').textContent = '📻 Stop radio';
+    findAndQueueSimilar(s);
+  }
+}
+
+async function loadSimilar(s) {
+  const list = document.getElementById('sip-similar-list');
+  list.innerHTML = '<div style="color:var(--muted);font-size:12px">Searching…</div>';
+  try {
+    const results = await searchYouTube(`${s.title} ${s.artist} similar`);
+    list.innerHTML = '';
+    results.slice(0,4).forEach(r => {
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:8px;border-radius:8px;cursor:pointer;transition:background 0.15s;margin-bottom:4px;';
+      row.onmouseover = () => row.style.background = 'rgba(255,255,255,0.06)';
+      row.onmouseout  = () => row.style.background = 'transparent';
+      row.innerHTML = `
+        <img src="${r.thumb}" style="width:52px;height:36px;border-radius:4px;object-fit:cover;flex-shrink:0">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:500;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${r.title}</div>
+          <div style="font-size:11px;color:rgba(255,255,255,0.4)">${r.channel}</div>
+        </div>
+        <button style="background:rgba(184,69,245,0.2);border:1px solid rgba(184,69,245,0.4);color:var(--accent);padding:5px 12px;border-radius:12px;font-size:11px;cursor:pointer;flex-shrink:0" onclick="event.stopPropagation();addAndPlayYT('${r.videoId}','${r.title.replace(/'/g,"\\'")}','${r.channel.replace(/'/g,"\\'")}','${r.thumb}')">+ Add</button>`;
+      row.onclick = () => openYTSongInfo(r);
+      list.appendChild(row);
+    });
+    if (!results.length) list.innerHTML = '<div style="color:var(--muted);font-size:12px">No similar songs found</div>';
+  } catch(e) {
+    list.innerHTML = '<div style="color:var(--muted);font-size:12px">Could not load similar songs</div>';
+  }
+}
+
+async function addAndPlayYT(videoId, title, artist, thumb) {
+  if (!serverOnline) { alert('Server not running — run start.bat first'); return; }
+  if (!addedVideos.has(videoId)) {
+    await addYTSong(videoId, title, artist, thumb);
+    // Wait for it to appear in library
+    let attempts = 0;
+    while (attempts < 20) {
+      await new Promise(r => setTimeout(r, 500));
+      const idx = localSongs.findIndex(s => s.title === title);
+      if (idx >= 0) { playSong(DEMO_SONGS ? localSongs.length - 1 : idx); break; }
+      attempts++;
+    }
+  }
+}
+
+// ── Auto Radio ──
+async function findAndQueueSimilar(s) {
+  if (!radioMode) return;
+  try {
+    const results = await searchYouTube(`${s.title} ${s.artist} similar songs`);
+    // Pick a random one from top 5
+    const pick = results[Math.floor(Math.random() * Math.min(5, results.length))];
+    if (!pick) return;
+    if (!serverOnline) return;
+    // Download it silently
+    const res  = await fetch(`${CONFIG.SERVER_URL}/download`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({videoId:pick.videoId, title:pick.title, artist:pick.channel}) });
+    const data = await res.json();
+    const waitForDone = async () => {
+      if (data.status === 'done') {
+        await finishYTAdd(pick.videoId, pick.title, pick.channel, pick.thumb, data.file);
+        playSong(allSongs().length - 1);
+        return;
+      }
+      const iv = setInterval(async () => {
+        const pr = await fetch(`${CONFIG.SERVER_URL}/progress/${pick.videoId}`).then(r=>r.json());
+        if (pr.status === 'done') {
+          clearInterval(iv);
+          await finishYTAdd(pick.videoId, pick.title, pick.channel, pick.thumb, pr.file);
+          if (radioMode) playSong(allSongs().length - 1);
+        }
+        if (pr.status === 'error') clearInterval(iv);
+      }, 1500);
+    };
+    waitForDone();
+  } catch(e) { console.warn('Radio error:', e); }
+}
+
+// Hook radio into song end
+const _origNextSong = nextSong;
+window.nextSong = function() {
+  _origNextSong();
+  if (radioMode && currentIdx >= 0) {
+    const s = allSongs()[currentIdx];
+    if (s) setTimeout(() => findAndQueueSimilar(s), 2000);
+  }
+};
+let lyricsOpen = false;
+let syncedLyrics = [];
+let lyricsInterval = null;
+
+function toggleLyrics() {
+  lyricsOpen = !lyricsOpen;
+  const fs  = document.getElementById('lyrics-fullscreen');
+  const btn = document.getElementById('lyrics-btn');
+  fs.style.display = lyricsOpen ? 'block' : 'none';
+  btn.classList.toggle('active', lyricsOpen);
+  if (lyricsOpen && currentIdx >= 0) {
+    const s = allSongs()[currentIdx];
+    updateLyricsHeader(s);
+    fetchLyrics(s);
+  }
+}
+
+function updateLyricsHeader(s) {
+  if (!s) return;
+  const src = s.art || s.thumb;
+  // Background
+  const bg = document.getElementById('lyrics-bg');
+  if (src) bg.style.backgroundImage = `url(${src})`;
+  else bg.style.background = s.color || '#1a0533';
+  // Art
+  const art = document.getElementById('lyrics-art');
+  art.innerHTML = src
+    ? `<img src="${src}" style="width:100%;height:100%;object-fit:cover">`
+    : `<div style="width:52px;height:52px;background:${s.color||'#282828'};display:flex;align-items:center;justify-content:center;font-size:24px">${s.emoji||'🎵'}</div>`;
+  document.getElementById('lyrics-track-name').textContent   = s.title  || '';
+  document.getElementById('lyrics-track-artist').textContent = s.artist || '';
+}
+
+async function fetchLyrics(s) {
+  if (!s) return;
+  const status = document.getElementById('lyrics-status-fs');
+  const lines  = document.getElementById('lyrics-lines-fs');
+  lines.innerHTML = '';
+  status.textContent = 'Searching for lyrics…';
+  syncedLyrics = [];
+  clearInterval(lyricsInterval);
+
+  // Try LRCLIB first for synced lyrics
+  try {
+    const q = `https://lrclib.net/api/search?track_name=${encodeURIComponent(s.title)}&artist_name=${encodeURIComponent(s.artist)}`;
+    const res = await fetch(q, { signal: AbortSignal.timeout(6000) });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.length) {
+        const track = data[0];
+        if (track.syncedLyrics) {
+          status.textContent = '';
+          parseSyncedLyrics(track.syncedLyrics);
+          startLyricsSync();
+          return;
+        } else if (track.plainLyrics) {
+          status.textContent = '';
+          showPlainLyrics(track.plainLyrics);
+          return;
+        }
+      }
+    }
+  } catch(_) {}
+
+  // Fallback: Genius
+  try {
+    const searchUrl = `https://api.genius.com/search?q=${encodeURIComponent(s.title+' '+s.artist)}`;
+    const proxyUrl  = `https://api.allorigins.win/get?url=${encodeURIComponent(searchUrl)}`;
+    const res = await fetch(proxyUrl, { signal: AbortSignal.timeout(8000) });
+    if (res.ok) {
+      const outer = await res.json();
+      const data  = JSON.parse(outer.contents);
+      const hit   = data?.response?.hits?.[0]?.result;
+      if (hit) {
+        status.textContent = '';
+        lines.innerHTML = `
+          <div style="margin-top:20px">
+            <img src="${hit.song_art_image_thumbnail_url}" style="width:140px;height:140px;border-radius:12px;object-fit:cover;margin-bottom:16px;box-shadow:0 8px 32px rgba(0,0,0,0.5)">
+            <div style="font-size:20px;font-weight:700;color:#fff;margin-bottom:4px">${hit.title}</div>
+            <div style="font-size:14px;color:rgba(255,255,255,0.6);margin-bottom:24px">${hit.primary_artist?.name||''}</div>
+            <a href="${hit.url}" target="_blank" style="background:rgba(255,255,255,0.15);backdrop-filter:blur(10px);color:#fff;padding:10px 24px;border-radius:24px;text-decoration:none;font-size:14px;font-weight:600;border:1px solid rgba(255,255,255,0.2)">
+              View on Genius ↗
+            </a>
+            <div style="font-size:12px;color:rgba(255,255,255,0.35);margin-top:20px">Synced lyrics not available</div>
+          </div>`;
+        return;
+      }
+    }
+  } catch(_) {}
+
+  status.textContent = 'No lyrics found for this song';
+}
+
+function parseSyncedLyrics(lrc) {
+  const lines = document.getElementById('lyrics-lines-fs');
+  lines.innerHTML = '';
+  syncedLyrics = [];
+  // Add spacer at top
+  lines.insertAdjacentHTML('beforeend', '<div style="height:40vh"></div>');
+  lrc.split('\n').forEach(line => {
+    const m = line.match(/\[(\d+):(\d+\.\d+)\](.*)/);
+    if (!m) return;
+    const time = parseInt(m[1])*60 + parseFloat(m[2]);
+    const text  = m[3].trim();
+    if (!text) return;
+    const div = document.createElement('div');
+    div.className = 'lyric-line-fs';
+    div.textContent = text;
+    div.onclick = () => { if (audio.duration) audio.currentTime = time; };
+    lines.appendChild(div);
+    syncedLyrics.push({ time, text, el: div });
+  });
+  // Add spacer at bottom
+  lines.insertAdjacentHTML('beforeend', '<div style="height:40vh"></div>');
+}
+
+function showPlainLyrics(plain) {
+  const lines = document.getElementById('lyrics-lines-fs');
+  lines.innerHTML = '<div style="height:20px"></div>';
+  plain.split('\n').forEach(line => {
+    const div = document.createElement('div');
+    div.className = 'lyric-line-fs';
+    div.style.cursor = 'default';
+    div.textContent = line || '\u00A0';
+    lines.appendChild(div);
+  });
+}
+
+function startLyricsSync() {
+  clearInterval(lyricsInterval);
+  let lastActive = -1;
+  lyricsInterval = setInterval(() => {
+    if (!syncedLyrics.length) return;
+    const t = audio.currentTime;
+    let activeIdx = -1;
+    for (let i = 0; i < syncedLyrics.length; i++) {
+      if (syncedLyrics[i].time <= t) activeIdx = i;
+    }
+    if (activeIdx === lastActive) return;
+    lastActive = activeIdx;
+    syncedLyrics.forEach((l, i) => {
+      if (!l.el) return;
+      const diff = i - activeIdx;
+      l.el.classList.toggle('active', i === activeIdx);
+      l.el.classList.toggle('past',   i < activeIdx);
+      l.el.classList.toggle('near',   diff === 1 || diff === -1);
+      l.el.classList.toggle('lyric-line-fs', true);
+    });
+    // Smooth scroll active line to center
+    if (activeIdx >= 0 && syncedLyrics[activeIdx]?.el) {
+      syncedLyrics[activeIdx].el.scrollIntoView({ behavior:'smooth', block:'center' });
+    }
+  }, 100);
+}
+
+async function fetchLyrics(s) {
+  if (!s) return;
+  const status = document.getElementById('lyrics-status');
+  const lines  = document.getElementById('lyrics-lines');
+  lines.innerHTML = '';
+  status.style.display = '';
+  status.textContent = 'Searching for lyrics…';
+  syncedLyrics = [];
+  clearInterval(lyricsInterval);
+
+  // Try LRCLIB first for synced lyrics
+  try {
+    const q = `https://lrclib.net/api/search?track_name=${encodeURIComponent(s.title)}&artist_name=${encodeURIComponent(s.artist)}`;
+    const res = await fetch(q, { signal: AbortSignal.timeout(6000) });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.length) {
+        const track = data[0];
+        if (track.syncedLyrics) {
+          status.style.display = 'none';
+          parseSyncedLyrics(track.syncedLyrics);
+          startLyricsSync();
+          return;
+        } else if (track.plainLyrics) {
+          status.style.display = 'none';
+          showPlainLyrics(track.plainLyrics);
+          return;
+        }
+      }
+    }
+  } catch(_) {}
+
+  // Fallback: Genius (plain lyrics via proxy)
+  try {
+    const searchUrl = `https://api.genius.com/search?q=${encodeURIComponent(s.title + ' ' + s.artist)}`;
+    const proxyUrl  = `https://api.allorigins.win/get?url=${encodeURIComponent(searchUrl)}`;
+    const res = await fetch(proxyUrl, {
+      signal: AbortSignal.timeout(8000),
+    });
+    if (res.ok) {
+      const outer = await res.json();
+      const data  = JSON.parse(outer.contents);
+      const hit   = data?.response?.hits?.[0]?.result;
+      if (hit) {
+        status.style.display = 'none';
+        lines.innerHTML = `
+          <div style="text-align:center;margin-bottom:20px">
+            <img src="${hit.song_art_image_thumbnail_url}" style="width:120px;height:120px;border-radius:8px;object-fit:cover;margin-bottom:12px">
+            <div style="font-size:16px;font-weight:700;color:var(--text)">${hit.title}</div>
+            <div style="font-size:13px;color:var(--muted);margin-bottom:16px">${hit.primary_artist?.name||''}</div>
+            <a href="${hit.url}" target="_blank" style="background:var(--accent);color:#fff;padding:8px 20px;border-radius:20px;text-decoration:none;font-size:13px;font-weight:600">
+              View full lyrics on Genius ↗
+            </a>
+            <div style="font-size:12px;color:var(--muted);margin-top:16px">Synced lyrics not available for this song</div>
+          </div>`;
+        return;
+      }
+    }
+  } catch(_) {}
+
+  status.textContent = 'No lyrics found for this song';
+}
+
+function parseSyncedLyrics(lrc) {
+  const lines = document.getElementById('lyrics-lines');
+  lines.innerHTML = '';
+  syncedLyrics = [];
+  lrc.split('\n').forEach((line, i) => {
+    const m = line.match(/\[(\d+):(\d+\.\d+)\](.*)/);
+    if (!m) return;
+    const time = parseInt(m[1])*60 + parseFloat(m[2]);
+    const text  = m[3].trim();
+    if (!text) return;
+    syncedLyrics.push({ time, text, el: null });
+    const div = document.createElement('div');
+    div.className = 'lyric-line';
+    div.textContent = text;
+    div.onclick = () => { if(audio.duration) audio.currentTime = time; };
+    lines.appendChild(div);
+    syncedLyrics[syncedLyrics.length-1].el = div;
+  });
+}
+
+function showPlainLyrics(plain) {
+  const lines = document.getElementById('lyrics-lines');
+  plain.split('\n').forEach(line => {
+    const div = document.createElement('div');
+    div.className = 'lyric-line';
+    div.textContent = line || ' ';
+    lines.appendChild(div);
+  });
+}
+
+function startLyricsSync() {
+  clearInterval(lyricsInterval);
+  lyricsInterval = setInterval(() => {
+    if (!syncedLyrics.length || !audio) return;
+    const t = audio.currentTime;
+    let activeIdx = -1;
+    for (let i = 0; i < syncedLyrics.length; i++) {
+      if (syncedLyrics[i].time <= t) activeIdx = i;
+    }
+    syncedLyrics.forEach((l, i) => {
+      if (!l.el) return;
+      l.el.classList.toggle('active', i === activeIdx);
+      l.el.classList.toggle('past', i < activeIdx);
+      if (i === activeIdx) l.el.scrollIntoView({ behavior:'smooth', block:'center' });
+    });
+  }, 250);
+}
+
+// ── Trending songs ──
+async function loadTrending() {
+  const grid = document.getElementById('trending-grid');
+  // Show shimmer placeholders
+  grid.innerHTML = '';
+  for (let i = 0; i < 8; i++) {
+    const d = document.createElement('div');
+    d.style.cssText = 'height:220px;border-radius:10px;';
+    d.className = 'shimmer';
+    grid.appendChild(d);
+  }
+
+  try {
+    const res = await fetch(
+      `https://www.googleapis.com/youtube/v3/videos?part=snippet&chart=mostPopular&videoCategoryId=10&maxResults=8&regionCode=US&key=${CONFIG.YOUTUBE_API_KEY}`,
+      { signal: AbortSignal.timeout(8000) }
+    );
+    if (!res.ok) throw new Error('API error');
+    const data = await res.json();
+    grid.innerHTML = '';
+    (data.items || []).forEach(item => {
+      const videoId = item.id;
+      const title   = item.snippet.title;
+      const channel = item.snippet.channelTitle;
+      const thumb   = item.snippet.thumbnails?.medium?.url || item.snippet.thumbnails?.default?.url;
+      const ytData  = { videoId, title, channel, thumb };
+      const card    = document.createElement('div');
+      card.className = 'card';
+      const isAdded = addedVideos.has(videoId);
+      card.innerHTML = `
+        <div class="card-art" style="background:#1a1545">
+          <img src="${thumb}" style="width:100%;height:100%;object-fit:cover" onerror="this.style.display='none'">
+        </div>
+        <div class="card-title">${title}</div>
+        <div class="card-sub">${channel}</div>
+        <button class="card-play" id="tr-btn-${videoId}" title="${isAdded?'Added':'Add to library'}">
+          ${isAdded
+            ? '<svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>'
+            : '<svg width="20" height="20" fill="#000" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>'
+          }
+        </button>`;
+      const btn = card.querySelector('.card-play');
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        if (!addedVideos.has(videoId)) addYTSong(videoId, title, channel, thumb);
+      });
+      card.onclick = () => openYTSongInfo(ytData);
+      grid.appendChild(card);
+    });
+  } catch(e) {
+    grid.innerHTML = '<div style="color:var(--muted);font-size:13px">Could not load trending songs</div>';
+  }
+}
+
+// Patch playSong to also fetch lyrics and update background
+const origPlaySong = playSong;
+window.playSong = function(idx) {
+  origPlaySong(idx);
+  clearInterval(lyricsInterval);
+  const s = allSongs()[idx];
+  if (lyricsOpen && s) {
+    updateLyricsHeader(s);
+    setTimeout(() => fetchLyrics(s), 300);
+  }
+};
 initDB();
 checkServer();
+loadTrending();
 setInterval(checkServer, 15000);
 </script>
 </body>
