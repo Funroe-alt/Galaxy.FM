@@ -33,25 +33,25 @@ def do_download(video_id, title, artist):
     elif d['status'] == 'finished':
       downloads[video_id]['status'] = 'processing'
 
-  # Look for ffmpeg in the same folder as server.py
-  script_dir = os.path.dirname(os.path.abspath(__file__))
-  ffmpeg_path = os.path.join(script_dir, 'ffmpeg.exe')
-  if not os.path.exists(ffmpeg_path):
-    ffmpeg_path = 'ffmpeg'  # fall back to system ffmpeg if installed
-
   ydl_opts = {
     'format': 'bestaudio/best',
     'outtmpl': out_path + '.%(ext)s',
     'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '192'}],
     'progress_hooks': [progress_hook],
-    'ffmpeg_location': script_dir,
     'quiet': True,
   }
 
   try:
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
       ydl.download([url])
-    downloads[video_id] = {'status': 'done', 'progress': 100, 'file': filename + '.mp3'}
+    # Find whatever file was actually downloaded
+    import glob
+    matches = glob.glob(out_path + '.*')
+    if matches:
+      actual_file = os.path.basename(matches[0])
+      downloads[video_id] = {'status': 'done', 'progress': 100, 'file': actual_file}
+    else:
+      downloads[video_id] = {'status': 'error', 'message': 'File not found after download'}
   except Exception as e:
     downloads[video_id] = {'status': 'error', 'message': str(e)}
 
