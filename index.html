@@ -1697,14 +1697,24 @@ async function importSpotifyCSV(file) {
   }).filter(s => s.title && s.artist);
   if (!songs.length) { alert("No songs found. Make sure this is from exportify.net"); return; }
   const plName = file.name.replace('.csv','').replace(/_/g,' ').replace(/"/g,'');
-  const pl = { id:genId(), name:plName, emoji:'🎵', color:'#1DB954', songs:[], createdAt:Date.now() };
-  playlists.push(pl); savePls();
+
+  // Find existing playlist with same name to update instead of creating duplicate
+  let pl = playlists.find(p => p.name.toLowerCase() === plName.toLowerCase());
+  let isUpdate = false;
+  if (pl) {
+    isUpdate = true;
+  } else {
+    pl = { id:genId(), name:plName, emoji:'🎵', color:'#1DB954', songs:[], createdAt:Date.now() };
+    playlists.push(pl);
+  }
+  savePls();
   const prog=document.getElementById('spotify-progress');
   const bar=document.getElementById('spotify-bar');
   const stat=document.getElementById('spotify-status');
   const count=document.getElementById('spotify-count');
   const log=document.getElementById('spotify-log');
   prog.style.display=''; log.innerHTML=''; bar.style.background='var(--accent)';
+  stat.textContent = isUpdate ? 'Updating playlist: '+plName : 'Importing: '+plName;
   let added=0, skipped=0, failed=0;
   for (let i=0; i<songs.length; i++) {
     const s=songs[i];
@@ -1719,9 +1729,19 @@ async function importSpotifyCSV(file) {
       const r=results[0];
       if (addedVideos.has(r.videoId)) {
         const existIdx=localSongs.findIndex(ls=>ls.videoId===r.videoId);
-        if (existIdx>=0&&!pl.songs.includes(existIdx)){pl.songs.push(existIdx);savePls();}
-        skipped++;
-        log.innerHTML+='<div style="color:var(--muted)">⟳ '+s.title+' (already in library)</div>';
+        if (existIdx>=0) {
+          if (!pl.songs.includes(existIdx)) {
+            pl.songs.push(existIdx); savePls();
+            added++;
+            log.innerHTML+='<div style="color:#1DB954">✓ '+s.title+' (added from library)</div>';
+          } else {
+            skipped++;
+            log.innerHTML+='<div style="color:var(--muted)">⟳ '+s.title+' (already in playlist)</div>';
+          }
+        } else {
+          skipped++;
+          log.innerHTML+='<div style="color:var(--muted)">⟳ '+s.title+' (already in library)</div>';
+        }
       } else if (serverOnline) {
         const res=await fetch(CONFIG.SERVER_URL+'/download',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({videoId:r.videoId,title:s.title,artist:s.artist})});
         const data=await res.json();
@@ -1764,7 +1784,7 @@ async function importSpotifyCSV(file) {
     log.scrollTop=log.scrollHeight;
     await new Promise(r=>setTimeout(r,1500));
   }
-  stat.textContent='Done! '+added+' added, '+skipped+' already in library, '+failed+' failed';
+  stat.textContent=(isUpdate?'Playlist updated! ':'Import done! ')+added+' '+(isUpdate?'new songs added':'added')+', '+skipped+' skipped, '+failed+' failed';
   bar.style.width='100%'; bar.style.background='#1DB954'; count.textContent='';
   refreshAll(); showPlaylist(pl.id);
 }
