@@ -1185,16 +1185,6 @@ async function finishYTAdd(videoId, title, artist, thumb, filenameOrUrl) {
   refreshAll();
 }
 
-      localSongs.push({ id:genId(), title, artist, url:songUrl, emoji:'🎵', color, thumb, videoId });
-    }
-  }
-
-  addedVideos.add(videoId);
-  localStorage.setItem('gx-added-vids', JSON.stringify([...addedVideos]));
-  if (btn) { btn.textContent='✓ Added'; btn.classList.remove('downloading'); btn.classList.add('added'); }
-  refreshAll();
-}
-
 // ── Server check ──
 async function checkServer() {
   try {
