@@ -1,37 +1,46 @@
-# server.py — Galaxify Flask backend
-# Handles yt-dlp downloads and serves files
-# Run with: python server.py
+# server.py — Galaxy.FM Flask backend
+# Downloads audio via yt-dlp and stores permanently on Cloudinary
 
-from flask import Flask, request, jsonify, send_file
+from flask import Flask, request, jsonify
 from flask_cors import CORS
 import yt_dlp
 import os
 import threading
-import json
+import cloudinary
+import cloudinary.uploader
 
 app = Flask(__name__)
 CORS(app)
 
-SONGS_DIR = os.path.join(os.path.dirname(__file__), 'songs')
-os.makedirs(SONGS_DIR, exist_ok=True)
+# Cloudinary config
+cloudinary.config(
+  cloud_name = 'xflnhfqx',
+  api_key    = '577732347343432',
+  api_secret = 'dN-BV1V7OkDJH48yxzwcoH-r6GQ',
+  secure     = True
+)
 
-# Track download progress
+TEMP_DIR = os.path.join(os.path.dirname(__file__), 'temp')
+os.makedirs(TEMP_DIR, exist_ok=True)
+
 downloads = {}
 
 def do_download(video_id, title, artist):
-  url = f'https://www.youtube.com/watch?v={video_id}'
-  filename = f'{artist} - {title}'.replace('/', '-').replace('\\', '-')
-  out_path = os.path.join(SONGS_DIR, filename)
-
+  safe_name = f'{artist} - {title}'.replace('/', '-').replace('\\', '-').replace(':', '-')
+  out_path   = os.path.join(TEMP_DIR, safe_name)
   downloads[video_id] = {'status': 'downloading', 'progress': 0}
 
   def progress_hook(d):
     if d['status'] == 'downloading':
-      total = d.get('total_bytes') or d.get('total_bytes_estimate', 1)
+      total      = d.get('total_bytes') or d.get('total_bytes_estimate', 1)
       downloaded = d.get('downloaded_bytes', 0)
       downloads[video_id]['progress'] = int((downloaded / total) * 100)
     elif d['status'] == 'finished':
       downloads[video_id]['status'] = 'processing'
+
+  # Find ffmpeg next to server.py
+  script_dir   = os.path.dirname(os.path.abspath(__file__))
+  ffmpeg_loc   = script_dir if os.path.exists(os.path.join(script_dir, 'ffmpeg.exe')) else None
 
   ydl_opts = {
     'format': 'bestaudio/best',
@@ -40,34 +49,82 @@ def do_download(video_id, title, artist):
     'progress_hooks': [progress_hook],
     'quiet': True,
   }
+  if ffmpeg_loc:
+    ydl_opts['ffmpeg_location'] = ffmpeg_loc
 
   try:
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-      ydl.download([url])
-    # Find whatever file was actually downloaded
-    import glob
-    matches = glob.glob(out_path + '.*')
-    if matches:
-      actual_file = os.path.basename(matches[0])
-      downloads[video_id] = {'status': 'done', 'progress': 100, 'file': actual_file}
-    else:
+      ydl.download([f'https://www.youtube.com/watch?v={video_id}'])
+
+    mp3_path = out_path + '.mp3'
+    if not os.path.exists(mp3_path):
+      import glob
+      matches = glob.glob(out_path + '.*')
+      mp3_path = matches[0] if matches else None
+
+    if not mp3_path:
       downloads[video_id] = {'status': 'error', 'message': 'File not found after download'}
+      return
+
+    # Upload to Cloudinary
+    downloads[video_id]['status'] = 'uploading'
+    result = cloudinary.uploader.upload(
+      mp3_path,
+      resource_type = 'video',   # Cloudinary uses 'video' for audio files
+      public_id     = f'galaxyfm/{video_id}',
+      overwrite     = True,
+      tags          = ['galaxyfm', artist, title]
+    )
+
+    # Delete local temp file
+    try: os.remove(mp3_path)
+    except: pass
+
+    cloud_url = result['secure_url']
+    downloads[video_id] = {
+      'status':   'done',
+      'progress': 100,
+      'url':      cloud_url,
+      'public_id': result['public_id']
+    }
+
   except Exception as e:
     downloads[video_id] = {'status': 'error', 'message': str(e)}
+    # Clean up temp file on error
+    try:
+      import glob
+      for f in glob.glob(out_path + '.*'):
+        os.remove(f)
+    except: pass
+
+@app.route('/')
+def index():
+  return jsonify({'status': 'ok', 'app': 'Galaxy.FM Backend', 'version': '2.0'})
+
+@app.route('/ping')
+def ping():
+  return jsonify({'status': 'ok'})
 
 @app.route('/download', methods=['POST'])
 def download():
-  data = request.json
+  data     = request.json
   video_id = data.get('videoId')
   title    = data.get('title', 'Unknown')
   artist   = data.get('artist', 'Unknown')
   if not video_id:
     return jsonify({'error': 'No videoId'}), 400
-  # Check if already downloaded
-  filename = f'{artist} - {title}.mp3'.replace('/', '-').replace('\\', '-')
-  if os.path.exists(os.path.join(SONGS_DIR, filename)):
-    return jsonify({'status': 'done', 'file': filename})
-  # Start download in background
+
+  # Check if already on Cloudinary
+  try:
+    existing = cloudinary.api.resource(f'galaxyfm/{video_id}', resource_type='video')
+    return jsonify({'status': 'done', 'url': existing['secure_url'], 'progress': 100})
+  except: pass
+
+  # Check if currently downloading
+  if video_id in downloads and downloads[video_id]['status'] not in ('error', 'done'):
+    return jsonify({'status': downloads[video_id]['status'], 'progress': downloads[video_id].get('progress', 0)})
+
+  # Start download
   t = threading.Thread(target=do_download, args=(video_id, title, artist))
   t.daemon = True
   t.start()
@@ -77,24 +134,7 @@ def download():
 def progress(video_id):
   return jsonify(downloads.get(video_id, {'status': 'unknown'}))
 
-@app.route('/songs')
-def list_songs():
-  files = [f for f in os.listdir(SONGS_DIR) if f.endswith(('.mp3','.wav','.ogg','.flac','.m4a'))]
-  return jsonify(files)
-
-@app.route('/songs/<path:filename>')
-def serve_song(filename):
-  return send_file(os.path.join(SONGS_DIR, filename))
-
-@app.route('/')
-def index():
-  return jsonify({'status': 'ok', 'app': 'Galaxify Backend', 'version': '1.0'})
-
-@app.route('/ping')
-def ping():
-  return jsonify({'status': 'ok', 'version': '1.0'})
-
 if __name__ == '__main__':
   port = int(os.environ.get('PORT', 5000))
-  print(f'Galaxify server running at http://localhost:{port}')
+  print(f'Galaxy.FM backend running at http://localhost:{port}')
   app.run(host='0.0.0.0', port=port, debug=False)

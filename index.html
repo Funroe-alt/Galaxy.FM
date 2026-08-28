@@ -950,9 +950,13 @@ async function loadFiles(files) {
 
 async function initDB() {
   try { localSongs = await dbLoadAllSongs(); } catch(e) { console.warn(e); }
+  // Load cloud songs (from Cloudinary) saved in localStorage
+  const cloudSongs = JSON.parse(localStorage.getItem('gx-cloud-songs') || '[]');
+  cloudSongs.forEach(s => { if (!localSongs.find(ls => ls.videoId === s.videoId)) localSongs.push(s); });
   refreshAll();
   fetchArtForSongs(localSongs, () => refreshAll());
 }
+
 
 async function deleteLocalSong(dbId) {
   if (!confirm('Remove this song?')) return;
@@ -1102,7 +1106,7 @@ async function addYTSong(videoId, title, artist, thumb) {
     });
     const data = await res.json();
     if (data.status === 'done') {
-      await finishYTAdd(videoId, title, artist, thumb, data.file);
+      await finishYTAdd(videoId, title, artist, thumb, data.url || data.file);
     } else {
       // Poll for progress
       pollDownload(videoId, title, artist, thumb, btn);
@@ -1124,7 +1128,7 @@ async function pollDownload(videoId, title, artist, thumb, btn) {
       if (btn) btn.textContent = `⬇ ${data.progress||0}%`;
       if (data.status === 'done') {
         clearInterval(interval);
-        await finishYTAdd(videoId, title, artist, thumb, data.file);
+        await finishYTAdd(videoId, title, artist, thumb, data.url || data.file);
       } else if (data.status === 'error') {
         clearInterval(interval);
         if (btn) { btn.textContent = '✕ Failed'; btn.classList.remove('downloading'); }
@@ -1133,28 +1137,43 @@ async function pollDownload(videoId, title, artist, thumb, btn) {
   }, 1000);
 }
 
-async function finishYTAdd(videoId, title, artist, thumb, filename) {
-  const btn = document.getElementById('btn-'+videoId);
-  // Fetch the mp3 as a blob so it plays locally
-  try {
-    const res  = await fetch(`${CONFIG.SERVER_URL}/songs/${encodeURIComponent(filename)}`);
-    const blob = await res.blob();
-    const file = new File([blob], filename, { type: 'audio/mpeg' });
-    const color = COLORS[localSongs.length % COLORS.length];
-    const saved = await dbSaveSong(file, { title, artist, emoji: '🎵', color });
-    const song  = { ...saved, local: true, thumb, videoId };
+async function finishYTAdd(videoId, title, artist, thumb, filenameOrUrl) {
+  const btn   = document.getElementById('btn-'+videoId);
+  const isUrl = filenameOrUrl && filenameOrUrl.startsWith('http');
+  const songUrl = isUrl ? filenameOrUrl : CONFIG.SERVER_URL+'/songs/'+encodeURIComponent(filenameOrUrl);
+  const color = COLORS[localSongs.length % COLORS.length];
+  if (isUrl) {
+    const song = {id:genId(),title,artist,url:songUrl,thumb,emoji:'🎵',color,videoId,cloud:true,art:null};
     localSongs.push(song);
-    fetchArt(title, artist).then(art => { if(art) { song.art = art; refreshAll(); } });
-  } catch(e) {
-    // If fetch fails just add as URL
-    localSongs.push({
-      id: genId(), title, artist, url: `${CONFIG.SERVER_URL}/songs/${encodeURIComponent(filename)}`,
-      emoji: '🎵', color: COLORS[localSongs.length % COLORS.length], thumb, videoId,
-    });
+    const cloudSongs = JSON.parse(localStorage.getItem('gx-cloud-songs')||'[]');
+    cloudSongs.push({id:song.id,title,artist,url:songUrl,thumb,emoji:'🎵',color,videoId,cloud:true,art:null});
+    localStorage.setItem('gx-cloud-songs',JSON.stringify(cloudSongs));
+    fetchArt(title,artist).then(art=>{if(art){song.art=art;refreshAll();}});
+  } else {
+    try {
+      const res=await fetch(songUrl); const blob=await res.blob();
+      const file=new File([blob],filenameOrUrl||title+'.mp3',{type:'audio/mpeg'});
+      const saved=await dbSaveSong(file,{title,artist,emoji:'🎵',color});
+      const song={...saved,local:true,thumb,videoId};
+      localSongs.push(song);
+      fetchArt(title,artist).then(art=>{if(art){song.art=art;refreshAll();}});
+    } catch(e) {
+      localSongs.push({id:genId(),title,artist,url:songUrl,emoji:'🎵',color,thumb,videoId});
+    }
   }
   addedVideos.add(videoId);
+  localStorage.setItem('gx-added-vids',JSON.stringify([...addedVideos]));
+  if(btn){btn.textContent='✓ Added';btn.classList.remove('downloading');btn.classList.add('added');}
+  refreshAll();
+}
+
+      localSongs.push({ id:genId(), title, artist, url:songUrl, emoji:'🎵', color, thumb, videoId });
+    }
+  }
+
+  addedVideos.add(videoId);
   localStorage.setItem('gx-added-vids', JSON.stringify([...addedVideos]));
-  if (btn) { btn.textContent = '✓ Added'; btn.classList.remove('downloading'); btn.classList.add('added'); }
+  if (btn) { btn.textContent='✓ Added'; btn.classList.remove('downloading'); btn.classList.add('added'); }
   refreshAll();
 }
 
@@ -1746,11 +1765,11 @@ async function importSpotifyCSV(file) {
         const res=await fetch(CONFIG.SERVER_URL+'/download',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({videoId:r.videoId,title:s.title,artist:s.artist})});
         const data=await res.json();
         await new Promise((resolve)=>{
-          if(data.status==='done'){resolve(data.file);return;}
+          if(data.status==='done'){resolve(data.url || data.file);return;}
           const iv=setInterval(async()=>{
             try{
               const pr=await fetch(CONFIG.SERVER_URL+'/progress/'+r.videoId).then(x=>x.json());
-              if(pr.status==='done'){clearInterval(iv);resolve(pr.file);}
+              if(pr.status==='done'){clearInterval(iv);resolve(pr.url || pr.file);}
               if(pr.status==='error'){clearInterval(iv);resolve(null);}
             }catch(e){clearInterval(iv);resolve(null);}
           },2000);
@@ -1919,12 +1938,12 @@ async function sipAddYT() {
   try {
     const res  = await fetch(`${CONFIG.SERVER_URL}/download`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({videoId,title,artist:channel}) });
     const data = await res.json();
-    if (data.status === 'done') { await finishYTAdd(videoId,title,channel,thumb,data.file); closeSongInfo(); return; }
+    if (data.status === 'done') { await finishYTAdd(videoId,title,channel,thumb,data.url || data.file); closeSongInfo(); return; }
     const iv = setInterval(async () => {
       const pr = await fetch(`${CONFIG.SERVER_URL}/progress/${videoId}`).then(r=>r.json());
       bar.style.width   = (pr.progress||0)+'%';
       label.textContent = `Downloading… ${pr.progress||0}%`;
-      if (pr.status==='done')  { clearInterval(iv); await finishYTAdd(videoId,title,channel,thumb,pr.file); closeSongInfo(); }
+      if (pr.status==='done')  { clearInterval(iv); await finishYTAdd(videoId,title,channel,thumb,pr.url || pr.file); closeSongInfo(); }
       if (pr.status==='error') { clearInterval(iv); label.textContent='Download failed'; }
     }, 1000);
   } catch(e) { label.textContent = 'Download failed'; }
@@ -1999,7 +2018,7 @@ async function findAndQueueSimilar(s) {
     const data = await res.json();
     const waitForDone = async () => {
       if (data.status === 'done') {
-        await finishYTAdd(pick.videoId, pick.title, pick.channel, pick.thumb, data.file);
+        await finishYTAdd(pick.videoId, pick.title, pick.channel, pick.thumb, data.url || data.file);
         playSong(allSongs().length - 1);
         return;
       }
@@ -2007,7 +2026,7 @@ async function findAndQueueSimilar(s) {
         const pr = await fetch(`${CONFIG.SERVER_URL}/progress/${pick.videoId}`).then(r=>r.json());
         if (pr.status === 'done') {
           clearInterval(iv);
-          await finishYTAdd(pick.videoId, pick.title, pick.channel, pick.thumb, pr.file);
+          await finishYTAdd(pick.videoId, pick.title, pick.channel, pick.thumb, pr.url || pr.file);
           if (radioMode) playSong(allSongs().length - 1);
         }
         if (pr.status === 'error') clearInterval(iv);
