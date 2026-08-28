@@ -2048,52 +2048,50 @@ async function fetchLyrics(s) {
   syncedLyrics = [];
   clearInterval(lyricsInterval);
 
-  // Try LRCLIB first for synced lyrics
-  try {
-    const q = `https://lrclib.net/api/search?track_name=${encodeURIComponent(s.title)}&artist_name=${encodeURIComponent(s.artist)}`;
-    const res = await fetch(q, { signal: AbortSignal.timeout(6000) });
-    if (res.ok) {
-      const data = await res.json();
-      if (data.length) {
-        const track = data[0];
-        if (track.syncedLyrics) {
-          status.textContent = '';
-          parseSyncedLyrics(track.syncedLyrics);
-          startLyricsSync();
-          return;
-        } else if (track.plainLyrics) {
-          status.textContent = '';
-          showPlainLyrics(track.plainLyrics);
-          return;
+  // Try LRCLIB with multiple query variations
+  const queries = [
+    { track: s.title, artist: s.artist },
+    { track: s.title, artist: '' },
+    { track: cleanTitle(s.title), artist: s.artist },
+  ];
+  for (const q of queries) {
+    try {
+      const url = `https://lrclib.net/api/search?track_name=${encodeURIComponent(q.track)}${q.artist ? '&artist_name='+encodeURIComponent(q.artist) : ''}`;
+      const res = await fetch(url, { signal: AbortSignal.timeout(6000) });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.length) {
+          const track = data[0];
+          if (track.syncedLyrics) {
+            status.textContent = '';
+            parseSyncedLyrics(track.syncedLyrics);
+            startLyricsSync();
+            return;
+          } else if (track.plainLyrics) {
+            status.textContent = '';
+            showPlainLyrics(track.plainLyrics);
+            return;
+          }
         }
       }
-    }
-  } catch(_) {}
+    } catch(_) {}
+  }
 
-  // Fallback: Genius
+  // Fallback: direct Genius search link
   try {
-    const searchUrl = `https://api.genius.com/search?q=${encodeURIComponent(s.title+' '+s.artist)}`;
-    const proxyUrl  = `https://api.allorigins.win/get?url=${encodeURIComponent(searchUrl)}`;
-    const res = await fetch(proxyUrl, { signal: AbortSignal.timeout(8000) });
-    if (res.ok) {
-      const outer = await res.json();
-      const data  = JSON.parse(outer.contents);
-      const hit   = data?.response?.hits?.[0]?.result;
-      if (hit) {
-        status.textContent = '';
-        lines.innerHTML = `
-          <div style="margin-top:20px">
-            <img src="${hit.song_art_image_thumbnail_url}" style="width:140px;height:140px;border-radius:12px;object-fit:cover;margin-bottom:16px;box-shadow:0 8px 32px rgba(0,0,0,0.5)">
-            <div style="font-size:20px;font-weight:700;color:#fff;margin-bottom:4px">${hit.title}</div>
-            <div style="font-size:14px;color:rgba(255,255,255,0.6);margin-bottom:24px">${hit.primary_artist?.name||''}</div>
-            <a href="${hit.url}" target="_blank" style="background:rgba(255,255,255,0.15);backdrop-filter:blur(10px);color:#fff;padding:10px 24px;border-radius:24px;text-decoration:none;font-size:14px;font-weight:600;border:1px solid rgba(255,255,255,0.2)">
-              View on Genius ↗
-            </a>
-            <div style="font-size:12px;color:rgba(255,255,255,0.35);margin-top:20px">Synced lyrics not available</div>
-          </div>`;
-        return;
-      }
-    }
+    const geniusSearch = `https://genius.com/search?q=${encodeURIComponent(s.title+' '+s.artist)}`;
+    status.textContent = '';
+    lines.innerHTML = `
+      <div style="margin-top:40px;text-align:center">
+        <div style="font-size:48px;margin-bottom:16px">🎤</div>
+        <div style="font-size:16px;font-weight:600;color:#fff;margin-bottom:8px">${s.title}</div>
+        <div style="font-size:13px;color:rgba(255,255,255,0.5);margin-bottom:24px">${s.artist}</div>
+        <div style="font-size:13px;color:rgba(255,255,255,0.4);margin-bottom:16px">No synced lyrics found for this song</div>
+        <a href="${geniusSearch}" target="_blank" style="background:rgba(255,255,255,0.12);backdrop-filter:blur(10px);color:#fff;padding:10px 24px;border-radius:24px;text-decoration:none;font-size:14px;font-weight:600;border:1px solid rgba(255,255,255,0.2);">
+          Search on Genius ↗
+        </a>
+      </div>`;
+    return;
   } catch(_) {}
 
   status.textContent = 'No lyrics found for this song';
