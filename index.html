@@ -980,13 +980,13 @@ function clearLikes() {
 }
 
 // ── YouTube Search ──
-let ytSearchCache = {};
+let ytSearchCache = JSON.parse(localStorage.getItem('gx-yt-search-cache') || '{}');
 let addedVideos   = new Set(JSON.parse(localStorage.getItem('gx-added-vids') || '[]'));
 
 async function searchYouTube(query) {
   if (ytSearchCache[query]) return ytSearchCache[query];
   try {
-    const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(query)}&type=video&videoCategoryId=10&maxResults=8&key=${CONFIG.YOUTUBE_API_KEY}`;
+    const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(query)}&type=video&maxResults=8&key=${CONFIG.YOUTUBE_API_KEY}`;
     const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
     if (!res.ok) return [];
     const data = await res.json();
@@ -998,6 +998,7 @@ async function searchYouTube(query) {
       published: item.snippet.publishedAt,
     }));
     ytSearchCache[query] = results;
+    localStorage.setItem('gx-yt-search-cache', JSON.stringify(ytSearchCache));
     return results;
   } catch(e) { console.warn('YT search error', e); return []; }
 }
@@ -1664,8 +1665,11 @@ function onSpotifyDrop(e) { e.preventDefault(); onSpotifyDragLeave(); if(e.dataT
 
 async function searchYouTubeWithRetry(query, retries=3) {
   for (let i = 0; i < retries; i++) {
-    try { const r = await searchYouTube(query); if (r.length) return r; } catch(e) {}
-    if (i < retries-1) await new Promise(r => setTimeout(r, 2000*(i+1)));
+    try {
+      const r = await searchYouTube(query);
+      if (r.length) return r;
+    } catch(e) {}
+    if (i < retries-1) await new Promise(r => setTimeout(r, 1500*(i+1)));
   }
   return [];
 }
@@ -2279,7 +2283,7 @@ async function loadTrending() {
 
   try {
     const res = await fetch(
-      `https://www.googleapis.com/youtube/v3/videos?part=snippet&chart=mostPopular&videoCategoryId=10&maxResults=8&regionCode=US&key=${CONFIG.YOUTUBE_API_KEY}`,
+      `https://www.googleapis.com/youtube/v3/videos?part=snippet&chart=mostPopular&maxResults=8&regionCode=US&key=${CONFIG.YOUTUBE_API_KEY}`,
       { signal: AbortSignal.timeout(8000) }
     );
     if (!res.ok) throw new Error('API error');
