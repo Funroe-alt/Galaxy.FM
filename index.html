@@ -2019,7 +2019,7 @@ function toggleLyrics() {
   if (lyricsOpen && currentIdx >= 0) {
     const s = allSongs()[currentIdx];
     updateLyricsHeader(s);
-    fetchLyrics(s);
+    setTimeout(() => fetchLyrics(s), 100);
   }
 }
 
@@ -2043,6 +2043,7 @@ async function fetchLyrics(s) {
   if (!s) return;
   const status = document.getElementById('lyrics-status-fs');
   const lines  = document.getElementById('lyrics-lines-fs');
+  if (!status || !lines) return; // panel not ready yet
   lines.innerHTML = '';
   status.textContent = 'Searching for lyrics…';
   syncedLyrics = [];
