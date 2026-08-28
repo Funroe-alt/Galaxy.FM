@@ -3,7 +3,24 @@ const ART_CACHE_KEY = 'galaxify-art-v1';
 const artCache = JSON.parse(localStorage.getItem(ART_CACHE_KEY) || '{}');
 
 function cleanTitle(t) {
-  return t.replace(/\s*\(Official.*?\)/gi,'').replace(/\s*\[.*?\]/g,'').replace(/\s*ft\..*$/i,'').trim();
+  return t
+    .replace(/\s*\(Official.*?\)/gi, '')
+    .replace(/\s*\[Official.*?\]/gi, '')
+    .replace(/\s*\(Lyrics.*?\)/gi, '')
+    .replace(/\s*\[Lyrics.*?\]/gi, '')
+    .replace(/\s*\(Audio.*?\)/gi, '')
+    .replace(/\s*\[Audio.*?\]/gi, '')
+    .replace(/\s*\(Music Video.*?\)/gi, '')
+    .replace(/\s*\[Music Video.*?\]/gi, '')
+    .replace(/\s*\(Live.*?\)/gi, '')
+    .replace(/\s*\[Live.*?\]/gi, '')
+    .replace(/\s*\(feat\..*?\)/gi, '')
+    .replace(/\s*\(ft\..*?\)/gi, '')
+    .replace(/\s*lyrics$/gi, '')
+    .replace(/\s*official video$/gi, '')
+    .replace(/\s*official audio$/gi, '')
+    .replace(/\s*official music video$/gi, '')
+    .trim();
 }
 
 async function fetchArt(title, artist) {

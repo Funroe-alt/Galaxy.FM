@@ -2006,6 +2006,17 @@ window.nextSong = function() {
     if (s) setTimeout(() => findAndQueueSimilar(s), 2000);
   }
 };
+function cleanTitle(t) {
+  return t
+    .replace(/\s*\(Official.*?\)/gi,'').replace(/\s*\[Official.*?\]/gi,'')
+    .replace(/\s*\(Lyrics.*?\)/gi,'').replace(/\s*\[Lyrics.*?\]/gi,'')
+    .replace(/\s*\(Audio.*?\)/gi,'').replace(/\s*\[Audio.*?\]/gi,'')
+    .replace(/\s*\(Music Video.*?\)/gi,'').replace(/\s*\(Live.*?\)/gi,'')
+    .replace(/\s*\(feat\..*?\)/gi,'').replace(/\s*\(ft\..*?\)/gi,'')
+    .replace(/\s*lyrics$/gi,'').replace(/\s*official.*$/gi,'')
+    .trim();
+}
+
 let lyricsOpen = false;
 let syncedLyrics = [];
 let lyricsInterval = null;
