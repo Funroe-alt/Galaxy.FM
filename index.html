@@ -352,7 +352,25 @@
       </div>
       <input type="file" id="file-input" multiple accept="audio/*" style="display:none" onchange="loadFiles(this.files)">
 
-      <!-- Spotify Import -->
+      <!-- Cloudinary Import -->
+      <div style="margin-top:12px;background:var(--card);border-radius:12px;padding:20px;border:1px solid var(--border);">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+          <div style="width:36px;height:36px;background:#6c47ff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;">☁️</div>
+          <div>
+            <div style="font-size:15px;font-weight:700;color:var(--text)">Import cloud songs</div>
+            <div style="font-size:12px;color:var(--muted)">Drop the cloudinary_songs.json file from the upload script</div>
+          </div>
+        </div>
+        <div id="cloud-drop" onclick="document.getElementById('cloud-json-input').click()"
+          ondragover="event.preventDefault();this.style.background='rgba(108,71,255,0.1)'"
+          ondragleave="this.style.background=''"
+          ondrop="event.preventDefault();this.style.background='';importCloudJSON(event.dataTransfer.files[0])"
+          style="border:2px dashed #6c47ff;border-radius:8px;padding:16px;text-align:center;cursor:pointer;transition:all 0.2s;">
+          <div style="font-size:13px;color:#6c47ff;font-weight:600">Drop cloudinary_songs.json here or click to browse</div>
+        </div>
+        <input type="file" id="cloud-json-input" accept=".json" style="display:none" onchange="importCloudJSON(this.files[0])">
+        <div id="cloud-import-status" style="font-size:13px;color:var(--muted);margin-top:8px;display:none"></div>
+      </div>
       <div style="margin-top:16px;background:var(--card);border-radius:12px;padding:20px;border:1px solid var(--border);">
         <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
           <div style="width:36px;height:36px;background:#1DB954;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;">🎵</div>
@@ -1674,6 +1692,39 @@ async function addAlbumAsCollection() {
   closeAlbumInfo();
   showAlbum(al.id);
 }
+// ── Cloudinary JSON Import ──
+async function importCloudJSON(file) {
+  if (!file) return;
+  const status = document.getElementById('cloud-import-status');
+  status.style.display = '';
+  status.textContent = 'Reading file…';
+  try {
+    const text = await file.text();
+    const songs = JSON.parse(text);
+    if (!Array.isArray(songs)) throw new Error('Invalid format');
+    let added = 0, skipped = 0;
+    songs.forEach(s => {
+      if (!s.url || !s.title) return;
+      if (localSongs.find(ls => ls.url === s.url)) { skipped++; return; }
+      const color = COLORS[localSongs.length % COLORS.length];
+      const song  = { id:genId(), title:s.title, artist:s.artist||'Unknown', url:s.url, thumb:s.thumb||null, emoji:s.emoji||'🎵', color, cloud:true, art:s.art||null };
+      localSongs.push(song);
+      const cloudSongs = JSON.parse(localStorage.getItem('gx-cloud-songs') || '[]');
+      cloudSongs.push(song);
+      localStorage.setItem('gx-cloud-songs', JSON.stringify(cloudSongs));
+      if (s.videoId) { addedVideos.add(s.videoId); localStorage.setItem('gx-added-vids', JSON.stringify([...addedVideos])); }
+      added++;
+    });
+    status.textContent = `✓ Done! ${added} songs imported, ${skipped} already in library`;
+    status.style.color = '#1DB954';
+    refreshAll();
+    fetchArtForSongs(localSongs, () => refreshAll());
+  } catch(e) {
+    status.textContent = '✕ Error: ' + e.message;
+    status.style.color = '#ff6b6b';
+  }
+}
+
 let searchTab = 'songs';
 function setSearchTab(tab) {
   searchTab = tab;
