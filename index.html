@@ -978,13 +978,18 @@ async function initDB() {
 
 async function deleteLocalSong(dbId) {
   if (!confirm('Remove this song?')) return;
-  // Remove this song's videoId from addedVideos so it can be re-added from search
   const s = localSongs.find(x => x.id === dbId);
   if (s?.videoId) {
     addedVideos.delete(s.videoId);
     localStorage.setItem('gx-added-vids', JSON.stringify([...addedVideos]));
   }
-  await dbDeleteSong(dbId);
+  // Remove from IndexedDB (local files)
+  try { await dbDeleteSong(dbId); } catch(e) {}
+  // Remove from cloud songs localStorage
+  if (s?.cloud) {
+    const cloudSongs = JSON.parse(localStorage.getItem('gx-cloud-songs') || '[]');
+    localStorage.setItem('gx-cloud-songs', JSON.stringify(cloudSongs.filter(cs => cs.id !== dbId)));
+  }
   localSongs = localSongs.filter(s => s.id !== dbId);
   refreshAll(); refreshSettings();
 }
