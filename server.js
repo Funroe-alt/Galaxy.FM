@@ -7,26 +7,47 @@ const path = require('path');
 const https = require('https');
 
 // Install yt-dlp if not found
-function ensureYtDlp() {
+function downloadFile(url, dest) {
+  return new Promise((resolve, reject) => {
+    const file = fs.createWriteStream(dest);
+    const follow = (u) => {
+      https.get(u, (res) => {
+        if (res.statusCode === 301 || res.statusCode === 302) {
+          follow(res.headers.location);
+          return;
+        }
+        res.pipe(file);
+        file.on('finish', () => { file.close(); resolve(); });
+      }).on('error', reject);
+    };
+    follow(url);
+  });
+}
+
+async function ensureYtDlp() {
   try {
     execSync('yt-dlp --version', { stdio: 'pipe' });
-    console.log('yt-dlp found');
+    console.log('yt-dlp found in PATH');
     return 'yt-dlp';
   } catch(_) {}
-  // Download yt-dlp binary
+
   const dest = '/app/yt-dlp';
+  if (fs.existsSync(dest)) {
+    console.log('yt-dlp found at /app/yt-dlp');
+    return dest;
+  }
+
   console.log('Downloading yt-dlp...');
   try {
-    execSync('curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o ' + dest + ' && chmod +x ' + dest);
+    await downloadFile('https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp', dest);
+    fs.chmodSync(dest, '755');
     console.log('yt-dlp installed at ' + dest);
     return dest;
   } catch(e) {
-    console.error('Failed to install yt-dlp:', e.message);
+    console.error('Failed to download yt-dlp:', e.message);
     return 'yt-dlp';
   }
 }
-
-const YTDLP = ensureYtDlp();
 
 const app = express();
 app.use(cors());
@@ -125,5 +146,10 @@ app.get('/progress/:videoId', (req, res) => {
   res.json(downloads[req.params.videoId] || { status: 'unknown' });
 });
 
+let YTDLP = 'yt-dlp';
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log('Galaxy.FM backend on port ' + PORT));
+
+ensureYtDlp().then(bin => {
+  YTDLP = bin;
+  app.listen(PORT, () => console.log('Galaxy.FM backend on port ' + PORT));
+});
