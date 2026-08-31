@@ -1,4 +1,0 @@
-flask
-flask-cors
-yt-dlp
-cloudinary==1.36.0
