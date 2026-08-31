@@ -47,7 +47,7 @@ async function ensureYtDlp() {
     'yt-dlp',
     '/usr/bin/yt-dlp',
     '/usr/local/bin/yt-dlp',
-    '/app/yt-dlp'
+    path.join(__dirname, 'yt-dlp')
   ];
   for (const loc of locations) {
     try {
@@ -68,7 +68,7 @@ async function ensureYtDlp() {
 
   // Download standalone binary (no Python needed - this is the _linux executable)
   console.log('Downloading yt-dlp standalone binary...');
-  const dest = '/app/yt-dlp';
+  const dest = path.join(__dirname, 'yt-dlp');
   try {
     // Use the _linux standalone which includes Python bundled
     await downloadFile('https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux', dest);
