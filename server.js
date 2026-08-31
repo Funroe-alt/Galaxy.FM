@@ -25,26 +25,32 @@ function downloadFile(url, dest) {
 }
 
 async function ensureYtDlp() {
+  // Check common locations
+  const locations = ['yt-dlp', '/app/yt-dlp', '/usr/bin/yt-dlp', '/usr/local/bin/yt-dlp', '/nix/var/nix/profiles/default/bin/yt-dlp'];
+  for (const loc of locations) {
+    try {
+      execSync(loc + ' --version', { stdio: 'pipe' });
+      console.log('yt-dlp found at: ' + loc);
+      return loc;
+    } catch(_) {}
+  }
+  // Try finding it
   try {
-    execSync('yt-dlp --version', { stdio: 'pipe' });
-    console.log('yt-dlp found in PATH');
-    return 'yt-dlp';
+    const found = execSync('find /nix -name "yt-dlp" 2>/dev/null | head -1', { stdio: 'pipe' }).toString().trim();
+    if (found) { console.log('yt-dlp found at: ' + found); return found; }
   } catch(_) {}
 
-  const dest = '/app/yt-dlp';
-  if (fs.existsSync(dest)) {
-    console.log('yt-dlp found at /app/yt-dlp');
-    return dest;
-  }
-
+  // Download Python yt-dlp
   console.log('Downloading yt-dlp...');
   try {
-    await downloadFile('https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp', dest);
-    fs.chmodSync(dest, '755');
-    console.log('yt-dlp installed at ' + dest);
-    return dest;
+    await downloadFile('https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp', '/app/yt-dlp');
+    fs.chmodSync('/app/yt-dlp', '755');
+    // Try with python3
+    execSync('python3 /app/yt-dlp --version', { stdio: 'pipe' });
+    console.log('yt-dlp works with python3');
+    return 'python3 /app/yt-dlp';
   } catch(e) {
-    console.error('Failed to download yt-dlp:', e.message);
+    console.error('yt-dlp setup failed:', e.message);
     return 'yt-dlp';
   }
 }
@@ -79,7 +85,10 @@ async function doDownload(videoId, title, artist) {
       'https://www.youtube.com/watch?v=' + videoId
     ];
 
-    const proc = execFile(YTDLP, args, { timeout: 300000 });
+    const ytdlpParts = YTDLP.split(' ');
+    const cmd = ytdlpParts[0];
+    const cmdArgs = ytdlpParts.length > 1 ? [...ytdlpParts.slice(1), ...args] : args;
+    const proc = execFile(cmd, cmdArgs, { timeout: 300000 });
 
     proc.stdout.on('data', (data) => {
       const match = data.toString().match(/(\d+\.?\d*)%/);
