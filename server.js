@@ -1,9 +1,32 @@
 const express = require('express');
 const cors = require('cors');
 const cloudinary = require('cloudinary').v2;
-const { execFile } = require('child_process');
+const { execFile, execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const https = require('https');
+
+// Install yt-dlp if not found
+function ensureYtDlp() {
+  try {
+    execSync('yt-dlp --version', { stdio: 'pipe' });
+    console.log('yt-dlp found');
+    return 'yt-dlp';
+  } catch(_) {}
+  // Download yt-dlp binary
+  const dest = '/app/yt-dlp';
+  console.log('Downloading yt-dlp...');
+  try {
+    execSync('curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o ' + dest + ' && chmod +x ' + dest);
+    console.log('yt-dlp installed at ' + dest);
+    return dest;
+  } catch(e) {
+    console.error('Failed to install yt-dlp:', e.message);
+    return 'yt-dlp';
+  }
+}
+
+const YTDLP = ensureYtDlp();
 
 const app = express();
 app.use(cors());
@@ -35,7 +58,7 @@ async function doDownload(videoId, title, artist) {
       'https://www.youtube.com/watch?v=' + videoId
     ];
 
-    const proc = execFile('yt-dlp', args, { timeout: 300000 });
+    const proc = execFile(YTDLP, args, { timeout: 300000 });
 
     proc.stdout.on('data', (data) => {
       const match = data.toString().match(/(\d+\.?\d*)%/);
