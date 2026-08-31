@@ -1,7 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const cloudinary = require('cloudinary').v2;
-const ytDlp = require('yt-dlp-exec');
+const { execFile } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
@@ -25,33 +25,54 @@ async function doDownload(videoId, title, artist) {
   const safeName = (artist + ' - ' + title).replace(/[\/\\:*?"<>|#;]/g, '').trim();
   const outTemplate = path.join(TEMP_DIR, safeName + '.%(ext)s');
   downloads[videoId] = { status: 'downloading', progress: 0 };
-  try {
-    await ytDlp('https://www.youtube.com/watch?v=' + videoId, {
-      extractAudio: true,
-      audioFormat: 'mp3',
-      audioQuality: '192K',
-      output: outTemplate,
-      noPlaylist: true
+
+  return new Promise((resolve) => {
+    const args = [
+      '-x', '--audio-format', 'mp3', '--audio-quality', '192K',
+      '-o', outTemplate, '--no-playlist',
+      '--newline',
+      'https://www.youtube.com/watch?v=' + videoId
+    ];
+
+    const proc = execFile('yt-dlp', args, { timeout: 300000 });
+
+    proc.stdout.on('data', (data) => {
+      const match = data.toString().match(/(\d+\.?\d*)%/);
+      if (match) downloads[videoId].progress = parseFloat(match[1]);
     });
-    downloads[videoId].status = 'uploading';
-    const mp3 = path.join(TEMP_DIR, safeName + '.mp3');
-    let filePath = fs.existsSync(mp3) ? mp3 : null;
-    if (!filePath) {
-      const files = fs.readdirSync(TEMP_DIR).filter(f => f.startsWith(safeName));
-      if (!files.length) throw new Error('File not found');
-      filePath = path.join(TEMP_DIR, files[0]);
-    }
-    const result = await cloudinary.uploader.upload(filePath, {
-      resource_type: 'video',
-      public_id: 'galaxyfm/' + videoId,
-      overwrite: true
+
+    proc.stderr.on('data', (data) => console.error('yt-dlp:', data.toString()));
+
+    proc.on('close', async (code) => {
+      if (code !== 0) {
+        downloads[videoId] = { status: 'error', message: 'yt-dlp failed with code ' + code };
+        return resolve();
+      }
+      downloads[videoId].status = 'uploading';
+      const mp3 = path.join(TEMP_DIR, safeName + '.mp3');
+      let filePath = fs.existsSync(mp3) ? mp3 : null;
+      if (!filePath) {
+        const files = fs.readdirSync(TEMP_DIR).filter(f => f.startsWith(safeName));
+        if (!files.length) {
+          downloads[videoId] = { status: 'error', message: 'File not found' };
+          return resolve();
+        }
+        filePath = path.join(TEMP_DIR, files[0]);
+      }
+      try {
+        const result = await cloudinary.uploader.upload(filePath, {
+          resource_type: 'video',
+          public_id: 'galaxyfm/' + videoId,
+          overwrite: true
+        });
+        try { fs.unlinkSync(filePath); } catch(_) {}
+        downloads[videoId] = { status: 'done', progress: 100, url: result.secure_url };
+      } catch(err) {
+        downloads[videoId] = { status: 'error', message: err.message };
+      }
+      resolve();
     });
-    try { fs.unlinkSync(filePath); } catch(_) {}
-    downloads[videoId] = { status: 'done', progress: 100, url: result.secure_url };
-  } catch(err) {
-    console.error(err.message);
-    downloads[videoId] = { status: 'error', message: err.message };
-  }
+  });
 }
 
 app.get('/', (req, res) => res.json({ status: 'ok', app: 'Galaxy.FM', version: '3.0' }));
