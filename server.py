@@ -9,6 +9,35 @@ import threading
 import cloudinary
 import cloudinary.uploader
 
+import subprocess
+import urllib.request
+
+def ensure_ffmpeg():
+  # Check if ffmpeg is already available
+  try:
+    subprocess.run(['ffmpeg', '-version'], capture_output=True, check=True)
+    print('ffmpeg found in PATH')
+    return 'ffmpeg'
+  except: pass
+
+  # Check /app/ffmpeg
+  if os.path.exists('/app/ffmpeg'):
+    print('ffmpeg found at /app/ffmpeg')
+    return '/app/ffmpeg'
+
+  # Download static ffmpeg binary
+  print('Downloading ffmpeg...')
+  try:
+    url = 'https://github.com/eugeneware/ffmpeg-static/releases/download/b6.0/linux-x64'
+    dest = '/app/ffmpeg'
+    urllib.request.urlretrieve(url, dest)
+    os.chmod(dest, 0o755)
+    print('ffmpeg downloaded successfully')
+    return dest
+  except Exception as e:
+    print(f'Failed to download ffmpeg: {e}')
+    return None
+
 app = Flask(__name__)
 CORS(app)
 
@@ -38,9 +67,22 @@ def do_download(video_id, title, artist):
     elif d['status'] == 'finished':
       downloads[video_id]['status'] = 'processing'
 
-  # Find ffmpeg next to server.py
-  script_dir   = os.path.dirname(os.path.abspath(__file__))
-  ffmpeg_loc   = script_dir if os.path.exists(os.path.join(script_dir, 'ffmpeg.exe')) else None
+  # Find ffmpeg — check local exe, then use ensure_ffmpeg
+  script_dir = os.path.dirname(os.path.abspath(__file__))
+  ffmpeg_loc = None
+  if os.path.exists(os.path.join(script_dir, 'ffmpeg.exe')):
+    ffmpeg_loc = script_dir
+  elif os.path.exists('/app/ffmpeg'):
+    ffmpeg_loc = '/app'
+  else:
+    # Try to download ffmpeg binary
+    try:
+      url  = 'https://github.com/eugeneware/ffmpeg-static/releases/download/b6.0/linux-x64'
+      dest = '/app/ffmpeg'
+      urllib.request.urlretrieve(url, dest)
+      os.chmod(dest, 0o755)
+      ffmpeg_loc = '/app'
+    except: pass
 
   ydl_opts = {
     'format': 'bestaudio/best',
