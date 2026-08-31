@@ -11,7 +11,7 @@ const CONFIG = {
   GENIUS_KEY: 'KHdsed_97wJlfDZqEBwlNDdyNxKabVGRZQAGBcHwCU3eOym_vaygpAKxRjuhJmEa',
   SERVER_URL: window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
     ? 'http://localhost:5000'
-    : 'https://galaxify-production.up.railway.app',
+    : 'https://galaxy-fm.onrender.com',
 };
 
 // YouTube key rotation
