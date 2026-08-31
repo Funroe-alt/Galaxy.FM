@@ -1,0 +1,11 @@
+# Netscape HTTP Cookie File
+# https://curl.haxx.se/rfc/cookie_spec.html
+# This is a generated file!  Do not edit.
+
+.youtube.com	TRUE	/	FALSE	2147483647	APISID	nMXmhDjKiu8bSjyZ/AWk7PmIlYdWE8hwmY
+.youtube.com	TRUE	/	TRUE	2147483647	SAPISID	pG072kD_IIsReQEp/ANe2XS-_NQSV6hY3I
+.youtube.com	TRUE	/	TRUE	2147483647	__Secure-1PAPISID	pG072kD_IIsReQEp/ANe2XS-_NQSV6hY3I
+.youtube.com	TRUE	/	TRUE	2147483647	__Secure-3PAPISID	pG072kD_IIsReQEp/ANe2XS-_NQSV6hY3I
+.youtube.com	TRUE	/	FALSE	2147483647	SID	g.a000CAnbvEMg7Cx9OHnKGvAnZS6DUf9nUrLvDC4_GV23Oftxzrtkzz7MKSU5o1j1lmrfH-1PsAACgYKAecSARYSFQHGX2MipSuo5b-Obdo-vmejvVUEfxoVAUF8yKrtbjzYrkkAi6Ungt9gIidl0076
+.youtube.com	TRUE	/	FALSE	2147483647	SIDCC	AKEyXzXgy4exICmnMKM2d-5dJHRKAuOJK91GM_tmEBeVPjPy5h4x3fzIghCChMvIxO-psb_nAQ
+.youtube.com	TRUE	/	FALSE	2147483647	PREF	f6=40000000&tz=America.Chicago

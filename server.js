@@ -120,8 +120,13 @@ async function doDownload(videoId, title, artist) {
   downloads[videoId] = { status: 'downloading', progress: 0 };
 
   return new Promise((resolve) => {
-    const args = ['-x', '-o', outTemplate, '--no-playlist', '--newline',
-      'https://www.youtube.com/watch?v=' + videoId];
+    const cookiesPath = path.join(__dirname, 'cookies.txt');
+    const args = ['-x', '-o', outTemplate, '--no-playlist', '--newline'];
+    if (fs.existsSync(cookiesPath)) {
+      args.push('--cookies', cookiesPath);
+      console.log('Using cookies file');
+    }
+    args.push('https://www.youtube.com/watch?v=' + videoId);
     const proc = execFile(YTDLP, args, { timeout: 300000 });
 
     proc.stdout?.on('data', (data) => {
