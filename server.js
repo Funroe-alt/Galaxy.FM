@@ -28,9 +28,10 @@ async function doDownload(videoId, title, artist) {
 
   return new Promise((resolve) => {
     const args = [
-      '-x', '--audio-format', 'mp3', '--audio-quality', '192K',
+      '-x',
       '-o', outTemplate, '--no-playlist',
       '--newline',
+      '--no-check-certificate',
       'https://www.youtube.com/watch?v=' + videoId
     ];
 
@@ -49,8 +50,12 @@ async function doDownload(videoId, title, artist) {
         return resolve();
       }
       downloads[videoId].status = 'uploading';
-      const mp3 = path.join(TEMP_DIR, safeName + '.mp3');
-      let filePath = fs.existsSync(mp3) ? mp3 : null;
+      const AUDIO_EXTS = ['.mp3', '.m4a', '.webm', '.ogg', '.opus', '.wav'];
+      let filePath = null;
+      for (const ext of AUDIO_EXTS) {
+        const p = path.join(TEMP_DIR, safeName + ext);
+        if (fs.existsSync(p)) { filePath = p; break; }
+      }
       if (!filePath) {
         const files = fs.readdirSync(TEMP_DIR).filter(f => f.startsWith(safeName));
         if (!files.length) {
