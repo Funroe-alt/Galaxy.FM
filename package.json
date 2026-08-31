@@ -1,7 +1,6 @@
 {
   "name": "galaxy-fm-backend",
   "version": "3.0.0",
-  "description": "Galaxy.FM Node.js backend",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
