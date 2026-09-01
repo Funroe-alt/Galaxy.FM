@@ -119,28 +119,44 @@ async function doDownload(videoId, title, artist) {
   return new Promise((resolve) => {
     const cookiesPath = path.join(__dirname, 'cookies.txt');
     // Use --get-url to get direct stream URL - much less memory than downloading
-    const args = ['--get-url', '-f', 'bestaudio', '--no-playlist'];
+    const args = [
+      '-x',
+      '-f', 'bestaudio/best',
+      '-o', path.join(__dirname, 'temp', videoId + '.%(ext)s'),
+      '--no-playlist',
+      '--extractor-args', 'youtube:player_client=ios',
+      '--user-agent', 'com.google.ios.youtube/19.29.1 (iPhone16,2; U; CPU iOS 17_5_1 like Mac OS X;)',
+      '--add-header', 'Accept-Language:en-US,en;q=0.9',
+    ];
     if (fs.existsSync(cookiesPath)) args.push('--cookies', cookiesPath);
     args.push('https://www.youtube.com/watch?v=' + videoId);
+
     let output = '';
-    const proc = execFile(YTDLP, args, { timeout: 60000 });
-    proc.stdout?.on('data', (d) => { output += d.toString(); });
+    const proc = execFile(YTDLP, args, { timeout: 300000 });
+    proc.stdout?.on('data', (d) => { output += d.toString(); const m = d.toString().match(/(\d+\.?\d*)%/); if(m) downloads[videoId].progress=parseFloat(m[1]); });
     proc.stderr?.on('data', (d) => { output += d.toString(); console.error('yt-dlp:', d.toString()); });
+
     proc.on('close', async (code) => {
-      console.log('yt-dlp exit:', code, output.slice(0, 200));
-      const streamUrl = output.trim().split('\n')[0];
-      if (code !== 0 || !streamUrl || !streamUrl.startsWith('http')) {
+      console.log('yt-dlp exit:', code, output.slice(0, 300));
+      if (code !== 0) {
         downloads[videoId] = { status: 'error', message: output.slice(0, 300) || 'yt-dlp failed' };
         return resolve();
       }
-      downloads[videoId] = { status: 'uploading', progress: 50 };
+      downloads[videoId].status = 'uploading';
+      // Find downloaded file
+      const files = fs.readdirSync(path.join(__dirname, 'temp')).filter(f => f.startsWith(videoId));
+      if (!files.length) {
+        downloads[videoId] = { status: 'error', message: 'File not found after download' };
+        return resolve();
+      }
+      const filePath = path.join(__dirname, 'temp', files[0]);
       try {
-        const result = await cloudinary.uploader.upload(streamUrl, {
+        const result = await cloudinary.uploader.upload(filePath, {
           resource_type: 'video', public_id: 'galaxyfm/' + videoId, overwrite: true
         });
+        try { fs.unlinkSync(filePath); } catch(_) {}
         downloads[videoId] = { status: 'done', progress: 100, url: result.secure_url };
       } catch(err) {
-        console.error('Cloudinary error:', err.message);
         downloads[videoId] = { status: 'error', message: err.message };
       }
       resolve();
@@ -151,6 +167,11 @@ async function doDownload(videoId, title, artist) {
 const PORT = process.env.PORT || 5000;
 ensureYtDlp().then(bin => {
   YTDLP = bin;
+  // Update yt-dlp to latest version
+  try {
+    execSync(bin + ' -U 2>/dev/null || true', { stdio: 'pipe', timeout: 30000 });
+    console.log('yt-dlp updated');
+  } catch(_) {}
   console.log('yt-dlp ready:', YTDLP);
   app.listen(PORT, () => console.log('Galaxy.FM backend on port ' + PORT));
 });
