@@ -110,7 +110,11 @@ app.post('/download', async (req, res) => {
   res.json({ status: 'downloading', videoId });
 });
 
-app.get('/progress/:videoId', (req, res) => {
+app.get('/debug', (req, res) => {
+  const tempDir = path.join(__dirname, 'temp');
+  const files = fs.existsSync(tempDir) ? fs.readdirSync(tempDir) : [];
+  res.json({ tempDir, files, downloads, ytdlp: YTDLP });
+});
   res.json(downloads[req.params.videoId] || { status: 'unknown' });
 });
 
