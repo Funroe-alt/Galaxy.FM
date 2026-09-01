@@ -115,6 +115,8 @@ app.get('/debug', (req, res) => {
   const files = fs.existsSync(tempDir) ? fs.readdirSync(tempDir) : [];
   res.json({ tempDir, files, downloads, ytdlp: YTDLP });
 });
+
+app.get('/progress/:videoId', (req, res) => {
   res.json(downloads[req.params.videoId] || { status: 'unknown' });
 });
 
