@@ -67,11 +67,15 @@ async function doDownload(videoId, title, artist) {
       '--add-header', 'Accept-Language:en-US,en;q=0.9',
       '--no-check-certificates',
     ];
+    // Add Node.js for signature solving
+    const nodePath = process.execPath;
+    if (nodePath) args.push('--compat-options', 'no-certifi');
     if (fs.existsSync(cookiesPath)) args.push('--cookies', cookiesPath);
     args.push('https://www.youtube.com/watch?v=' + videoId);
 
     let output = '';
-    const proc = execFile(YTDLP, args, { timeout: 300000 });
+    const env = { ...process.env, DENO_PATH: '', NODE_PATH: process.execPath };
+    const proc = execFile(YTDLP, args, { timeout: 300000, env });
     proc.stdout.on('data', (d) => { output += d.toString(); const m = d.toString().match(/(\d+\.?\d*)%/); if (m) downloads[videoId].progress = parseFloat(m[1]); });
     proc.stderr.on('data', (d) => { output += d.toString(); });
     proc.on('close', async (code) => {
