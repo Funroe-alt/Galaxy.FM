@@ -129,15 +129,21 @@ async function doDownload(videoId, title, artist) {
     args.push('https://www.youtube.com/watch?v=' + videoId);
     const proc = execFile(YTDLP, args, { timeout: 300000 });
 
+    let ytOutput = '';
     proc.stdout?.on('data', (data) => {
+      ytOutput += data.toString();
       const m = data.toString().match(/(\d+\.?\d*)%/);
       if (m) downloads[videoId].progress = parseFloat(m[1]);
     });
-    proc.stderr?.on('data', (d) => console.error('yt-dlp stderr:', d.toString()));
+    proc.stderr?.on('data', (d) => {
+      ytOutput += d.toString();
+      console.error('yt-dlp stderr:', d.toString());
+    });
 
     proc.on('close', async (code) => {
+      console.log('yt-dlp exit:', code, ytOutput.slice(0, 300));
       if (code !== 0) {
-        downloads[videoId] = { status: 'error', message: 'yt-dlp failed code ' + code };
+        downloads[videoId] = { status: 'error', message: ytOutput.slice(0, 300) || 'yt-dlp failed code ' + code };
         return resolve();
       }
       downloads[videoId].status = 'uploading';
