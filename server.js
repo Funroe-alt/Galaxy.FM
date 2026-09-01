@@ -110,7 +110,20 @@ app.post('/download', async (req, res) => {
   res.json({ status: 'downloading', videoId });
 });
 
-app.get('/debug', (req, res) => {
+app.get('/test/:videoId', (req, res) => {
+  const { videoId } = req.params;
+  const cookiesPath = path.join(__dirname, 'cookies.txt');
+  const args = ['--dump-json', '--no-playlist'];
+  if (fs.existsSync(cookiesPath)) args.push('--cookies', cookiesPath);
+  args.push('https://www.youtube.com/watch?v=' + videoId);
+  let output = '';
+  const proc = execFile(YTDLP, args, { timeout: 30000 });
+  proc.stdout?.on('data', d => output += d.toString());
+  proc.stderr?.on('data', d => output += d.toString());
+  proc.on('close', (code) => {
+    res.json({ code, output: output.slice(0, 500) });
+  });
+});
   const tempDir = path.join(__dirname, 'temp');
   const files = fs.existsSync(tempDir) ? fs.readdirSync(tempDir) : [];
   res.json({ tempDir, files, downloads, ytdlp: YTDLP });
