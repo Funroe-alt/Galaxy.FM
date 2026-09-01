@@ -52,7 +52,24 @@ async function ensureYtDlp() {
   return dest;
 }
 
-async function doDownload(videoId, title, artist) {
+async function ensureDeno() {
+  try {
+    execSync('deno --version', { stdio: 'pipe' });
+    console.log('Deno found');
+    return true;
+  } catch(_) {}
+  try {
+    console.log('Installing Deno...');
+    execSync('curl -fsSL https://deno.land/install.sh | sh', { stdio: 'pipe', shell: true, timeout: 60000 });
+    const denoPath = path.join(process.env.HOME || '/root', '.deno', 'bin', 'deno');
+    if (fs.existsSync(denoPath)) {
+      process.env.PATH = process.env.PATH + ':' + path.dirname(denoPath);
+      console.log('Deno installed');
+      return true;
+    }
+  } catch(e) { console.error('Deno install failed:', e.message); }
+  return false;
+}
   downloads[videoId] = { status: 'downloading', progress: 0 };
   return new Promise((resolve) => {
     const cookiesPath = path.join(__dirname, 'cookies.txt');
@@ -63,8 +80,7 @@ async function doDownload(videoId, title, artist) {
       '-x', '-f', 'bestaudio/best',
       '-o', outPath,
       '--no-playlist',
-      '--extractor-args', 'youtube:player_client=tv_embedded',
-      '--add-header', 'Accept-Language:en-US,en;q=0.9',
+      '--extractor-args', 'youtube:player_client=mediaconnect',
     ];
     if (fs.existsSync(cookiesPath)) args.push('--cookies', cookiesPath);
     args.push('https://www.youtube.com/watch?v=' + videoId);
@@ -143,8 +159,9 @@ app.get('/progress/:videoId', (req, res) => {
 });
 
 const PORT = process.env.PORT || 5000;
-ensureYtDlp().then(bin => {
+ensureYtDlp().then(async bin => {
   YTDLP = bin;
+  await ensureDeno();
   try { execSync(bin + ' -U', { stdio: 'pipe', timeout: 30000 }); console.log('yt-dlp updated'); } catch(_) {}
   app.listen(PORT, () => console.log('Galaxy.FM backend on port ' + PORT));
 }).catch(err => {
