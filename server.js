@@ -63,13 +63,9 @@ async function doDownload(videoId, title, artist) {
       '-x', '-f', 'bestaudio/best',
       '-o', outPath,
       '--no-playlist',
-      '--extractor-args', 'youtube:player_client=web,default',
+      '--extractor-args', 'youtube:player_client=tv_embedded',
       '--add-header', 'Accept-Language:en-US,en;q=0.9',
-      '--no-check-certificates',
     ];
-    // Add Node.js for signature solving
-    const nodePath = process.execPath;
-    if (nodePath) args.push('--compat-options', 'no-certifi');
     if (fs.existsSync(cookiesPath)) args.push('--cookies', cookiesPath);
     args.push('https://www.youtube.com/watch?v=' + videoId);
 
@@ -112,7 +108,7 @@ app.get('/ping', (req, res) => res.json({ status: 'ok', ytdlp: YTDLP }));
 
 app.get('/test/:videoId', (req, res) => {
   const cookiesPath = path.join(__dirname, 'cookies.txt');
-  const args = ['--dump-json', '--no-playlist', '--extractor-args', 'youtube:player_client=web,default'];
+  const args = ['--dump-json', '--no-playlist', '--extractor-args', 'youtube:player_client=tv_embedded'];
   if (fs.existsSync(cookiesPath)) args.push('--cookies', cookiesPath);
   args.push('https://www.youtube.com/watch?v=' + req.params.videoId);
   let out = '';
