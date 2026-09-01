@@ -1,7 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const cloudinary = require('cloudinary').v2;
-const { execFile, execSync, spawn } = require('child_process');
+const { execFile, execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const https = require('https');
@@ -53,52 +53,46 @@ async function ensureYtDlp() {
 }
 
 async function ensureDeno() {
-  try {
-    execSync('deno --version', { stdio: 'pipe' });
-    console.log('Deno found');
-    return true;
-  } catch(_) {}
+  try { execSync('deno --version', { stdio: 'pipe' }); console.log('Deno found'); return; } catch(_) {}
   try {
     console.log('Installing Deno...');
-    execSync('curl -fsSL https://deno.land/install.sh | sh', { stdio: 'pipe', shell: true, timeout: 60000 });
+    execSync('curl -fsSL https://deno.land/install.sh | sh 2>/dev/null || true', { stdio: 'pipe', shell: true, timeout: 60000 });
     const denoPath = path.join(process.env.HOME || '/root', '.deno', 'bin', 'deno');
     if (fs.existsSync(denoPath)) {
       process.env.PATH = process.env.PATH + ':' + path.dirname(denoPath);
-      console.log('Deno installed');
-      return true;
+      console.log('Deno installed at ' + denoPath);
     }
   } catch(e) { console.error('Deno install failed:', e.message); }
-  return false;
 }
+
+async function doDownload(videoId, title, artist) {
   downloads[videoId] = { status: 'downloading', progress: 0 };
   return new Promise((resolve) => {
     const cookiesPath = path.join(__dirname, 'cookies.txt');
     const outPath = path.join(TEMP_DIR, videoId + '.%(ext)s');
-
-    // Try web client with oauth2 bypass
     const args = [
       '-x', '-f', 'bestaudio/best',
       '-o', outPath,
       '--no-playlist',
-      '--extractor-args', 'youtube:player_client=mediaconnect',
     ];
     if (fs.existsSync(cookiesPath)) args.push('--cookies', cookiesPath);
     args.push('https://www.youtube.com/watch?v=' + videoId);
 
     let output = '';
-    const env = { ...process.env, DENO_PATH: '', NODE_PATH: process.execPath };
-    const proc = execFile(YTDLP, args, { timeout: 300000, env });
+    const env = Object.assign({}, process.env);
+    const proc = execFile(YTDLP, args, { timeout: 300000, env: env });
     proc.stdout.on('data', (d) => { output += d.toString(); const m = d.toString().match(/(\d+\.?\d*)%/); if (m) downloads[videoId].progress = parseFloat(m[1]); });
     proc.stderr.on('data', (d) => { output += d.toString(); });
     proc.on('close', async (code) => {
-      console.log('yt-dlp exit:', code, output.slice(0, 300));
+      console.log('yt-dlp exit: ' + code);
+      console.log('output: ' + output.slice(0, 400));
       if (code !== 0) {
         downloads[videoId] = { status: 'error', message: output.slice(0, 300) };
         return resolve();
       }
-      const files = fs.readdirSync(TEMP_DIR).filter(f => f.startsWith(videoId));
+      const files = fs.readdirSync(TEMP_DIR).filter(function(f) { return f.startsWith(videoId); });
       if (!files.length) {
-        downloads[videoId] = { status: 'error', message: 'File not found. Output: ' + output.slice(0, 200) };
+        downloads[videoId] = { status: 'error', message: 'File not found. ' + output.slice(0, 200) };
         return resolve();
       }
       downloads[videoId].status = 'uploading';
@@ -119,28 +113,30 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-app.get('/', (req, res) => res.json({ status: 'ok', app: 'Galaxy.FM', version: '3.0', ytdlp: YTDLP }));
-app.get('/ping', (req, res) => res.json({ status: 'ok', ytdlp: YTDLP }));
+app.get('/', function(req, res) { res.json({ status: 'ok', app: 'Galaxy.FM', version: '3.0', ytdlp: YTDLP }); });
+app.get('/ping', function(req, res) { res.json({ status: 'ok', ytdlp: YTDLP }); });
 
-app.get('/test/:videoId', (req, res) => {
+app.get('/debug', function(req, res) {
+  const files = fs.existsSync(TEMP_DIR) ? fs.readdirSync(TEMP_DIR) : [];
+  res.json({ TEMP_DIR: TEMP_DIR, files: files, downloads: downloads, ytdlp: YTDLP });
+});
+
+app.get('/test/:videoId', function(req, res) {
   const cookiesPath = path.join(__dirname, 'cookies.txt');
-  const args = ['--dump-json', '--no-playlist', '--extractor-args', 'youtube:player_client=tv_embedded'];
+  const args = ['--dump-json', '--no-playlist'];
   if (fs.existsSync(cookiesPath)) args.push('--cookies', cookiesPath);
   args.push('https://www.youtube.com/watch?v=' + req.params.videoId);
   let out = '';
   const proc = execFile(YTDLP, args, { timeout: 30000 });
-  proc.stdout.on('data', d => out += d.toString());
-  proc.stderr.on('data', d => out += d.toString());
-  proc.on('close', (code) => res.json({ code, output: out.slice(0, 1000) }));
+  proc.stdout.on('data', function(d) { out += d.toString(); });
+  proc.stderr.on('data', function(d) { out += d.toString(); });
+  proc.on('close', function(code) { res.json({ code: code, output: out.slice(0, 1000) }); });
 });
 
-app.get('/debug', (req, res) => {
-  const files = fs.existsSync(TEMP_DIR) ? fs.readdirSync(TEMP_DIR) : [];
-  res.json({ TEMP_DIR, files, downloads, ytdlp: YTDLP });
-});
-
-app.post('/download', async (req, res) => {
-  const { videoId, title = 'Unknown', artist = 'Unknown' } = req.body;
+app.post('/download', async function(req, res) {
+  const videoId = req.body.videoId;
+  const title = req.body.title || 'Unknown';
+  const artist = req.body.artist || 'Unknown';
   if (!videoId) return res.status(400).json({ error: 'No videoId' });
   try {
     const existing = await cloudinary.api.resource('galaxyfm/' + videoId, { resource_type: 'video' });
@@ -151,20 +147,21 @@ app.post('/download', async (req, res) => {
     return res.json({ status: cur.status, progress: cur.progress || 0 });
   }
   doDownload(videoId, title, artist);
-  res.json({ status: 'downloading', videoId });
+  res.json({ status: 'downloading', videoId: videoId });
 });
 
-app.get('/progress/:videoId', (req, res) => {
+app.get('/progress/:videoId', function(req, res) {
   res.json(downloads[req.params.videoId] || { status: 'unknown' });
 });
 
 const PORT = process.env.PORT || 5000;
-ensureYtDlp().then(async bin => {
+
+ensureYtDlp().then(async function(bin) {
   YTDLP = bin;
   await ensureDeno();
   try { execSync(bin + ' -U', { stdio: 'pipe', timeout: 30000 }); console.log('yt-dlp updated'); } catch(_) {}
-  app.listen(PORT, () => console.log('Galaxy.FM backend on port ' + PORT));
-}).catch(err => {
+  app.listen(PORT, function() { console.log('Galaxy.FM backend on port ' + PORT); });
+}).catch(function(err) {
   console.error('Failed:', err.message);
   process.exit(1);
 });
