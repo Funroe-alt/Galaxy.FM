@@ -4,6 +4,12 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Galaxy.FM</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#b845f5">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Galaxy.FM">
+  <link rel="apple-touch-icon" href="icon-192.png">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌌</text></svg>">
   <script src="config.js"></script>
   <script src="db.js"></script>
@@ -240,12 +246,48 @@
     /* Shimmer */
     .shimmer { background: linear-gradient(90deg,var(--card) 25%,var(--card-hover) 50%,var(--card) 75%); background-size: 200% 100%; animation: shimmer 1.5s infinite; border-radius: 10px; }
     @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
-  </style>
+    /* ── Mobile responsive ── */
+    @media (max-width: 768px) {
+      #sidebar {
+        display: none;
+        position: fixed;
+        top: 0; left: 0; bottom: 90px;
+        width: 260px;
+        z-index: 200;
+        box-shadow: 4px 0 20px rgba(0,0,0,0.5);
+      }
+      #sidebar.mobile-open { display: flex; }
+      #main { margin-left: 0 !important; }
+      #content { padding: 16px !important; }
+      .card-grid { grid-template-columns: repeat(2, 1fr) !important; gap: 10px !important; }
+      #player { padding: 0 10px; gap: 8px; }
+      #player-title { font-size: 12px; max-width: 100px; }
+      #player-artist { font-size: 11px; }
+      .ctrl-btn { width: 32px; height: 32px; }
+      #progress-bar { width: 120px !important; }
+      #vol-slider { display: none; }
+      #mobile-menu-btn { display: flex !important; }
+      #mobile-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 199; }
+      #mobile-overlay.show { display: block; }
+      .section-title { font-size: 18px !important; }
+      #search-bar { font-size: 16px; }
+      .yt-result { padding: 10px !important; }
+      .yt-thumb { width: 80px !important; height: 52px !important; }
+    }
+    @media (max-width: 480px) {
+      .card-grid { grid-template-columns: repeat(2, 1fr) !important; }
+      #player-art { width: 44px !important; height: 44px !important; }
+    }
+    #mobile-menu-btn { display: none; position: fixed; top: 14px; left: 14px; z-index: 201; background: rgba(7,0,43,0.9); border: 1px solid var(--border); color: var(--text); width: 36px; height: 36px; border-radius: 8px; cursor: pointer; align-items: center; justify-content: center; backdrop-filter: blur(10px); }
 </head>
 <body>
 <canvas id="stars-canvas"></canvas>
 
 <!-- Sidebar -->
+<button id="mobile-menu-btn" onclick="toggleMobileMenu()">
+  <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24"><path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/></svg>
+</button>
+<div id="mobile-overlay" onclick="toggleMobileMenu()"></div>
 <div id="sidebar">
   <div id="logo-area">
     <div id="logo-icon">🌌</div>
@@ -684,6 +726,11 @@
   </div>
 </div>
 
+<!-- YouTube iframe player (hidden) -->
+<div id="yt-player-wrap" style="display:none;position:fixed;bottom:90px;right:0;width:0;height:0;overflow:hidden;">
+  <div id="yt-player"></div>
+</div>
+
 <!-- Player -->
 <div id="player">
   <div id="track-info">
@@ -874,9 +921,24 @@ function playSong(idx) {
   setPBar(0); setBadge('');
   updatePlayerArt(s);
 
-  if (!s.url) { setBadge('err'); return; }
-  audio.src = s.url; audio.load();
-  audio.play().catch(() => setBadge('err'));
+  if (!s.url && !s.videoId) { setBadge('err'); return; }
+
+  // If song has a Cloudinary/local URL, use audio element
+  if (s.url && !s.yt) {
+    hideYTPlayer();
+    audio.src = s.url; audio.load();
+    audio.play().catch(() => setBadge('err'));
+  } else {
+    // Play via YouTube iframe
+    const vid = s.videoId || (s.url && s.url.includes('youtube') ? s.url.split('v=')[1]?.split('&')[0] : null);
+    if (vid) {
+      audio.pause();
+      showYTPlayer(vid);
+    } else {
+      audio.src = s.url; audio.load();
+      audio.play().catch(() => setBadge('err'));
+    }
+  }
   isPlaying = true; updatePlayIcon();
   refreshLibrary();
 }
@@ -1106,38 +1168,49 @@ function buildYTResult(r) {
 
 async function addYTSong(videoId, title, artist, thumb) {
   const btn = document.getElementById('btn-'+videoId);
-  if (!btn || btn.classList.contains('added')) return;
+  if (btn?.classList.contains('added')) return;
 
+  // If server is offline, add as YouTube streaming link directly
   if (!serverOnline) {
-    alert('The Galaxy.FM server is not running.\n\nDouble-click start.bat to start it, then try again.');
+    const color = COLORS[localSongs.length % COLORS.length];
+    const song = { id:genId(), title, artist, url:'https://www.youtube.com/watch?v='+videoId, thumb, emoji:'🎵', color, yt:true, videoId };
+    localSongs.push(song);
+    addedVideos.add(videoId);
+    localStorage.setItem('gx-added-vids', JSON.stringify([...addedVideos]));
+    // Save to cloud songs so it persists
+    const cloudSongs = JSON.parse(localStorage.getItem('gx-cloud-songs')||'[]');
+    cloudSongs.push(song);
+    localStorage.setItem('gx-cloud-songs', JSON.stringify(cloudSongs));
+    fetchArt(title, artist).then(art => { if(art){song.art=art;refreshAll();} });
+    if (btn) { btn.textContent='✓ Added'; btn.classList.add('added'); }
+    refreshAll();
     return;
   }
 
-  btn.textContent = '⬇ Downloading…';
-  btn.classList.add('downloading');
-
-  // Add progress bar
-  const result = document.getElementById('btn-'+videoId).closest('.yt-result').querySelector('.yt-info');
-  let barHtml = `<div class="dl-progress"><div class="dl-bar" id="bar-${videoId}" style="width:0%"></div></div>`;
-  result.insertAdjacentHTML('beforeend', barHtml);
+  if (btn) { btn.textContent='⬇ Downloading…'; btn.classList.add('downloading'); }
+  const result = document.getElementById('btn-'+videoId)?.closest('.yt-result')?.querySelector('.yt-info');
+  if (result) result.insertAdjacentHTML('beforeend', `<div class="dl-progress"><div class="dl-bar" id="bar-${videoId}" style="width:0%"></div></div>`);
 
   try {
-    const res = await fetch(`${CONFIG.SERVER_URL}/download`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ videoId, title, artist })
-    });
+    const res  = await fetch(CONFIG.SERVER_URL+'/download', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({videoId,title,artist}) });
     const data = await res.json();
     if (data.status === 'done') {
       await finishYTAdd(videoId, title, artist, thumb, data.url || data.file);
     } else {
-      // Poll for progress
       pollDownload(videoId, title, artist, thumb, btn);
     }
   } catch(err) {
-    btn.textContent = '✕ Failed';
-    btn.classList.remove('downloading');
-    console.error(err);
+    // Fallback to YT link
+    const color = COLORS[localSongs.length % COLORS.length];
+    const song = { id:genId(), title, artist, url:'https://www.youtube.com/watch?v='+videoId, thumb, emoji:'🎵', color, yt:true, videoId };
+    localSongs.push(song);
+    addedVideos.add(videoId);
+    localStorage.setItem('gx-added-vids', JSON.stringify([...addedVideos]));
+    const cloudSongs = JSON.parse(localStorage.getItem('gx-cloud-songs')||'[]');
+    cloudSongs.push(song);
+    localStorage.setItem('gx-cloud-songs', JSON.stringify(cloudSongs));
+    if (btn) { btn.textContent='✓ Added'; btn.classList.add('added'); }
+    refreshAll();
   }
 }
 
@@ -1687,7 +1760,87 @@ async function addAlbumAsCollection() {
   closeAlbumInfo();
   showAlbum(al.id);
 }
-// ── Cloudinary JSON Import ──
+// ── PWA Service Worker ──
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('./sw.js').then(() => console.log('SW registered')).catch(() => {});
+}
+
+// ── Mobile menu ──
+function toggleMobileMenu() {
+  const sidebar  = document.getElementById('sidebar');
+  const overlay  = document.getElementById('mobile-overlay');
+  const isOpen   = sidebar.classList.contains('mobile-open');
+  sidebar.classList.toggle('mobile-open', !isOpen);
+  overlay.classList.toggle('show', !isOpen);
+}
+
+// Close sidebar when nav item clicked on mobile
+document.querySelectorAll('.nav-item').forEach(btn => {
+  btn.addEventListener('click', () => {
+    if (window.innerWidth <= 768) {
+      document.getElementById('sidebar').classList.remove('mobile-open');
+      document.getElementById('mobile-overlay').classList.remove('show');
+    }
+  });
+});
+let ytPlayer = null;
+let ytReady  = false;
+let ytPendingVideoId = null;
+
+// Load YouTube IFrame API
+const ytScript = document.createElement('script');
+ytScript.src = 'https://www.youtube.com/iframe_api';
+document.head.appendChild(ytScript);
+
+window.onYouTubeIframeAPIReady = function() {
+  ytReady = true;
+  ytPlayer = new YT.Player('yt-player', {
+    height: '1', width: '1',
+    playerVars: { autoplay: 1, controls: 0, disablekb: 1 },
+    events: {
+      onReady: (e) => {
+        if (ytPendingVideoId) { e.target.loadVideoById(ytPendingVideoId); ytPendingVideoId = null; }
+      },
+      onStateChange: (e) => {
+        if (e.data === YT.PlayerState.PLAYING) { isPlaying = true; updatePlayIcon(); setBadge('ok'); }
+        if (e.data === YT.PlayerState.PAUSED)  { isPlaying = false; updatePlayIcon(); }
+        if (e.data === YT.PlayerState.ENDED)   { if(doRepeat) ytPlayer.playVideo(); else nextSong(); }
+        if (e.data === YT.PlayerState.BUFFERING) setBadge('load');
+      },
+      onError: () => setBadge('err')
+    }
+  });
+};
+
+function showYTPlayer(videoId) {
+  document.getElementById('yt-player-wrap').style.display = 'block';
+  setBadge('load');
+  isPlaying = true; updatePlayIcon();
+  if (ytReady && ytPlayer) {
+    ytPlayer.loadVideoById(videoId);
+  } else {
+    ytPendingVideoId = videoId;
+  }
+}
+
+function hideYTPlayer() {
+  document.getElementById('yt-player-wrap').style.display = 'none';
+  if (ytReady && ytPlayer) try { ytPlayer.stopVideo(); } catch(_) {}
+}
+
+// Override togglePlay for YT songs
+const _origTogglePlay = togglePlay;
+window.togglePlay = function() {
+  const s = allSongs()[currentIdx];
+  if (s && (s.yt || (s.videoId && !s.url)) && ytReady && ytPlayer) {
+    const state = ytPlayer.getPlayerState();
+    if (state === YT.PlayerState.PLAYING) { ytPlayer.pauseVideo(); isPlaying = false; }
+    else { ytPlayer.playVideo(); isPlaying = true; }
+    updatePlayIcon();
+  } else {
+    _origTogglePlay();
+  }
+};
 async function importCloudJSON(file) {
   if (!file) return;
   const status = document.getElementById('cloud-import-status');
